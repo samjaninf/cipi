@@ -1,12 +1,11 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/andreapollastri/cipi/latest/logo.png" width="120" alt="Cipi">
+  <img src="https://raw.githubusercontent.com/andreapollastri/cipi/latest/logo.png" width="240" alt="Cipi">
 </p>
 
-<h1 align="center">Cipi</h1>
-
 <p align="center">
-  <strong>Install and manage your server like a pro.</strong><br>
-  The open-source control panel built exclusively for Laravel.
+  <h2>Cipi</h2>
+  <strong>Easy Laravel Deployments</strong><br>
+  The open-source deploy CLI exclusively for Laravel.
 </p>
 
 <p align="center">
@@ -159,7 +158,7 @@ Copy the SSH key and add it as a **Deploy Key**:
 - **Bitbucket:** Repository → Settings → Access keys
 - **Gitea:** Repository → Settings → Deploy Keys
 
-This works with **any Git provider** that supports SSH keys. No OAuth, no SSO — just standard SSH authentication.
+This works with **any Git provider** that supports SSH keys.
 
 ### 3. Deploy
 
@@ -488,7 +487,7 @@ After installing the agent, configure a webhook in your Git provider:
 | --------- | ------------------------------------- | --------------------- |
 | GitHub    | `https://yourdomain.com/cipi/webhook` | Set as "Secret"       |
 | GitLab    | `https://yourdomain.com/cipi/webhook` | Set as "Secret token" |
-| Bitbucket | `https://yourdomain.com/cipi/webhook` | —                     |
+| Bitbucket | `https://yourdomain.com/cipi/webhook` | Set as "Secret token" |
 | Gitea     | `https://yourdomain.com/cipi/webhook` | Set as "Secret"       |
 
 The token is in your `.env` as `CIPI_WEBHOOK_TOKEN` (also visible via `cipi deploy myapp --webhook`).
