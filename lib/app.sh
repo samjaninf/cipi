@@ -483,20 +483,20 @@ EOF
 }
 
 _create_deployer_config() {
-    local app="$1" repo="$2" branch="$3" v="$4" home="/home/${app}"
-    cat > "${home}/.deployer/deploy.php" <<'PHPTOP'
+    local app_name="$1" repo="$2" branch="$3" v="$4" deploy_home="/home/${app_name}"
+    cat > "${deploy_home}/.deployer/deploy.php" <<'PHPTOP'
 <?php
 namespace Deployer;
 require 'recipe/laravel.php';
 
 PHPTOP
-    cat >> "${home}/.deployer/deploy.php" <<PHP
-set('application', '${app}');
+    cat >> "${deploy_home}/.deployer/deploy.php" <<PHP
+set('application', '${app_name}');
 set('repository', '${repo}');
 set('branch', '${branch}');
-set('deploy_path', '${home}');
+set('deploy_path', '${deploy_home}');
 set('keep_releases', 5);
-set('git_ssh_command', 'ssh -i ${home}/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new');
+set('git_ssh_command', 'ssh -i ${deploy_home}/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new');
 set('bin/php', '/usr/bin/php${v}');
 set('writable_mode', 'chmod');
 
@@ -509,18 +509,18 @@ add('writable_dirs', [
 ]);
 
 host('localhost')
-    ->set('remote_user', '${app}')
-    ->set('deploy_path', '${home}');
+    ->set('remote_user', '${app_name}')
+    ->set('deploy_path', '${deploy_home}');
 
 after('deploy:vendors', 'artisan:storage:link');
 after('deploy:vendors', 'artisan:optimize');
 after('deploy:symlink', 'workers:restart');
 
 task('workers:restart', function () {
-    run('sudo /usr/local/bin/cipi-worker restart ${app}');
+    run('sudo /usr/local/bin/cipi-worker restart ${app_name}');
 });
 PHP
-    chown -R "${app}:${app}" "${home}/.deployer"
+    chown -R "${app_name}:${app_name}" "${deploy_home}/.deployer"
 }
 
 # ── ROUTERS ───────────────────────────────────────────────────
