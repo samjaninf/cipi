@@ -396,13 +396,13 @@ cipi backup configure
 
 Endpoint URL examples by provider:
 
-| Provider            | Endpoint URL                                      |
-| ------------------- | ------------------------------------------------- |
-| AWS S3              | *(leave empty)*                                   |
-| Hetzner             | `https://fsn1.your-objectstorage.com`             |
-| DigitalOcean Spaces | `https://<region>.digitaloceanspaces.com`         |
-| Backblaze B2        | `https://s3.<region>.backblazeb2.com`             |
-| MinIO               | `https://your-minio-host`                         |
+| Provider            | Endpoint URL                                  |
+| ------------------- | --------------------------------------------- |
+| AWS S3              | _(leave empty)_                               |
+| Hetzner             | `https://<datacenter>.your-objectstorage.com` |
+| DigitalOcean Spaces | `https://<region>.digitaloceanspaces.com`     |
+| Backblaze B2        | `https://s3.<region>.backblazeb2.com`         |
+| MinIO               | `https://your-minio-host`                     |
 
 ```bash
 # Backup everything
@@ -642,15 +642,15 @@ Credentials (database passwords, webhook tokens) are generated using `openssl ra
 
 ### Services
 
-| Command                              | Description                                   |
-| ------------------------------------ | --------------------------------------------- |
-| `cipi service list`                  | Status of all services with uptime info       |
-| `cipi service list <service>`        | Status of a specific service                  |
-| `cipi service restart`               | Restart all services                          |
-| `cipi service restart <service\|all>` | Restart one or all services                   |
-| `cipi service restart php`           | Restart all installed PHP-FPM versions        |
-| `cipi service start <service>`       | Start a stopped service                       |
-| `cipi service stop <service>`        | Stop a running service (with confirmation)    |
+| Command                               | Description                                |
+| ------------------------------------- | ------------------------------------------ |
+| `cipi service list`                   | Status of all services with uptime info    |
+| `cipi service list <service>`         | Status of a specific service               |
+| `cipi service restart`                | Restart all services                       |
+| `cipi service restart <service\|all>` | Restart one or all services                |
+| `cipi service restart php`            | Restart all installed PHP-FPM versions     |
+| `cipi service start <service>`        | Start a stopped service                    |
+| `cipi service stop <service>`         | Stop a running service (with confirmation) |
 
 Services: `nginx` `mariadb` `supervisor` `fail2ban` `php<ver>-fpm`
 

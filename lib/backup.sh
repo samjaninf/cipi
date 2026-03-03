@@ -56,7 +56,7 @@ _bk_configure() {
     read_input "Region" "${cr:-eu-central-1}" cr
     echo -e "  ${DIM}Leave empty for AWS S3. For other providers set the endpoint URL.${NC}"
     echo -e "  ${DIM}Examples:${NC}"
-    echo -e "  ${DIM}  Hetzner:    https://fsn1.your-objectstorage.com${NC}"
+    echo -e "  ${DIM}  Hetzner:    https://<datacenter>.your-objectstorage.com${NC}"
     echo -e "  ${DIM}  DO Spaces:  https://<region>.digitaloceanspaces.com${NC}"
     echo -e "  ${DIM}  Backblaze:  https://s3.<region>.backblazeb2.com${NC}"
     echo -e "  ${DIM}  MinIO:      https://your-minio-host${NC}"
