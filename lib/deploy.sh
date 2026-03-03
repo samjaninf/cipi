@@ -12,7 +12,8 @@ deploy_command() {
     if   [[ "${ARG_rollback:-}" == "true" ]]; then _deploy_rollback "$app"
     elif [[ "${ARG_releases:-}" == "true" ]]; then _deploy_releases "$app"
     elif [[ "${ARG_key:-}" == "true" ]];      then _deploy_key "$app"
-    elif [[ "${ARG_webhook:-}" == "true" ]];   then _deploy_webhook "$app"
+    elif [[ "${ARG_webhook:-}" == "true" ]];  then _deploy_webhook "$app"
+    elif [[ "${ARG_unlock:-}" == "true" ]];   then _deploy_unlock "$app"
     else _deploy_run "$app"
     fi
 }
@@ -45,6 +46,16 @@ _deploy_run() {
         warn "Rollback: cipi deploy ${app} --rollback"
         log_action "DEPLOY FAIL: $app exit=$rc"
     fi
+}
+
+_deploy_unlock() {
+    local app="$1" home="/home/${app}"
+    local df="${home}/.deployer/deploy.php"
+    [[ ! -f "$df" ]] && { error "Deployer config not found for '${app}'"; exit 1; }
+    warn "Unlocking deploy for '${app}'..."
+    sudo -u "$app" bash -c "/usr/local/bin/dep deploy:unlock -f ${df} 2>&1"
+    [[ $? -eq 0 ]] && success "Deploy unlocked — run: cipi deploy ${app}" || error "Unlock failed"
+    log_action "DEPLOY UNLOCK: $app"
 }
 
 _deploy_rollback() {
