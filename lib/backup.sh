@@ -54,8 +54,7 @@ AWSCFG
 
     step "Testing S3 connectivity..."
     local test_err
-    test_err=$(aws s3 ls "s3://${cb}" 2>&1)
-    if [[ $? -ne 0 ]]; then
+    if ! test_err=$(aws s3 ls "s3://${cb}" 2>&1); then
         error "S3 connection failed:"
         echo "$test_err" | sed 's/^/  /'
         exit 1
@@ -90,8 +89,7 @@ _bk_run() {
         }
 
         local s3_err
-        s3_err=$(aws s3 cp "${d}/" "s3://${bucket}/cipi/${app}/${ts}/" --recursive 2>&1)
-        if [[ $? -ne 0 ]]; then
+        if ! s3_err=$(aws s3 cp "${d}/" "s3://${bucket}/cipi/${app}/${ts}/" --recursive 2>&1); then
             error "  S3 upload failed:"
             echo "$s3_err" | sed 's/^/    /'
             ok=false
