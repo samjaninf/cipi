@@ -90,6 +90,7 @@ _api_ensure_laravel_app() {
         else
             (cd /tmp/cipi-api-build && composer require andreapollastri/cipi-api --no-interaction 2>/dev/null) || true
         fi
+        (cd /tmp/cipi-api-build && composer require laravel/mcp --no-interaction 2>/dev/null) || true
 
         # 3. Configure .env
         sed -i "s|^QUEUE_CONNECTION=.*|QUEUE_CONNECTION=database|" /tmp/cipi-api-build/.env
@@ -308,6 +309,7 @@ api_upgrade() {
     else
         (cd /tmp/cipi-api-build && composer require andreapollastri/cipi-api --no-interaction 2>/dev/null) || true
     fi
+    (cd /tmp/cipi-api-build && composer require laravel/mcp --no-interaction 2>/dev/null) || true
     success "cipi-api package installed"
 
     # 4. Restore .env (keeps APP_KEY, DB credentials, QUEUE_CONNECTION)
