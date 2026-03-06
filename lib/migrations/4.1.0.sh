@@ -10,6 +10,7 @@ set -e
 
 CIPI_CONFIG="${CIPI_CONFIG:-/etc/cipi}"
 CIPI_LIB="${CIPI_LIB:-/opt/cipi/lib}"
+CIPI_LOG="${CIPI_LOG:-/var/log/cipi}"
 
 # ── 1. Vault: encrypt existing config files at rest ──────────
 
@@ -24,6 +25,25 @@ if [[ -f "${CIPI_LIB}/vault.sh" ]]; then
             vault_seal "$f" && echo "  Sealed: $f" || echo "  Already encrypted or skipped: $f"
         fi
     done
+
+    # Generate apps-public.json (plaintext, non-sensitive fields only) for API
+    if [[ -f "${CIPI_CONFIG}/apps.json" ]] && [[ -f "${CIPI_CONFIG}/api.json" ]]; then
+        echo "  Generating apps-public.json for API..."
+        source "${CIPI_LIB}/common.sh" 2>/dev/null || true
+        if type _update_apps_public &>/dev/null; then
+            _update_apps_public && echo "  apps-public.json generated" || echo "  apps-public.json generation skipped"
+        else
+            vault_read apps.json | jq '
+                with_entries(.value |= {domain, aliases, php, branch, repository, user, created_at})
+            ' > "${CIPI_CONFIG}/apps-public.json"
+            chmod 640 "${CIPI_CONFIG}/apps-public.json"
+            if getent group cipi-api &>/dev/null; then
+                chgrp cipi-api "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || true
+            fi
+            echo "  apps-public.json generated"
+        fi
+    fi
+
     echo "Vault encryption configured"
 else
     echo "vault.sh not found — skipping vault setup"

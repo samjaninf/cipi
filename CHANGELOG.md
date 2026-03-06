@@ -27,6 +27,7 @@ All notable changes to Cipi are documented in this file.
 - `cipi-cron-notify` wrapper — runs system cron jobs and sends email alert on failure
 - Config stored in `/etc/cipi/smtp.json`; `smtp.json` included in sync export for migration
 - **Vault: config encryption at rest** — all JSON config files (`server.json`, `apps.json`, `databases.json`, `backup.json`, `smtp.json`, `api.json`) are encrypted on disk with AES-256-CBC using a per-server master key (`/etc/cipi/.vault_key`); transparent read/write with backward compatibility for existing plaintext configs; existing servers are automatically migrated on update
+- **apps-public.json** — plaintext projection of `apps.json` containing only non-sensitive fields (domain, aliases, php, branch, repository, user, created_at); automatically regenerated on every app change; the `cipi-api` group reads this file instead of the encrypted `apps.json`, so the vault key stays root-only with no privilege escalation
 - **Encrypted sync export** — `cipi sync export` now encrypts the archive with a user-provided passphrase (AES-256-CBC); `cipi sync import` and `cipi sync list` transparently detect and decrypt encrypted archives; protects SSH keys, `.env` files, database dumps, and credentials during transfer; all sync commands accept `--passphrase=<secret>` for non-interactive/automated usage (cron, scripts)
 - **GDPR-compliant log rotation** — automatic retention policies via logrotate:
   - **Application logs** (Laravel, PHP-FPM, workers, deploy, Cipi system) — **12 months**

@@ -58,9 +58,20 @@ domain_is_used_by_other_app() {
 
 app_get() { vault_read apps.json | jq -r --arg a "$1" --arg k "$2" '.[$a][$k] // empty'; }
 
-# When Cipi API is configured, allow www-data to read apps.json via a dedicated
-# cipi-api group. App users belong to www-data but NOT cipi-api, so they cannot
-# read other apps' webhook tokens.
+# Generate apps-public.json: a plaintext projection of apps.json containing
+# only non-sensitive fields (domain, aliases, php, branch, repository, user,
+# created_at). The encrypted apps.json keeps webhook tokens and git IDs safe.
+_update_apps_public() {
+    [[ -f "${CIPI_CONFIG}/apps.json" ]] || return 0
+    vault_read apps.json | jq '
+        with_entries(.value |= {domain, aliases, php, branch, repository, user, created_at})
+    ' > "${CIPI_CONFIG}/apps-public.json"
+    chmod 640 "${CIPI_CONFIG}/apps-public.json"
+    chgrp cipi-api "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || true
+}
+
+# When Cipi API is configured, ensure www-data can read apps-public.json via
+# the cipi-api group. The encrypted apps.json stays root-only (600).
 ensure_apps_json_api_access() {
     [[ -f "${CIPI_CONFIG}/api.json" ]] || return 0
     [[ -f "${CIPI_CONFIG}/apps.json" ]] || return 0
@@ -72,8 +83,7 @@ ensure_apps_json_api_access() {
     fi
     chgrp cipi-api "${CIPI_CONFIG}" 2>/dev/null || true
     chmod 750 "${CIPI_CONFIG}" 2>/dev/null || true
-    chgrp cipi-api "${CIPI_CONFIG}/apps.json" 2>/dev/null || true
-    chmod 640 "${CIPI_CONFIG}/apps.json" 2>/dev/null || true
+    _update_apps_public
 }
 
 app_set() {
