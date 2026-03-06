@@ -38,8 +38,21 @@ else
     echo "API not configured or apps.json missing — skip permissions fix"
 fi
 
-# 4. Restart PHP-FPM so www-data picks up new group membership
+# 4. Fix API writable directories (previous versions ran artisan/composer as root)
+CIPI_API_ROOT="/opt/cipi/api"
+if [[ -d "${CIPI_API_ROOT}" ]]; then
+    chown -R www-data:www-data "${CIPI_API_ROOT}/storage" "${CIPI_API_ROOT}/database" "${CIPI_API_ROOT}/bootstrap/cache" 2>/dev/null || true
+    echo "Fixed API writable directories ownership (storage, database, bootstrap/cache)"
+fi
+
+# 5. Restart PHP-FPM so www-data picks up new group membership
 if systemctl is-active --quiet php8.4-fpm 2>/dev/null; then
     systemctl restart php8.4-fpm 2>/dev/null || true
     echo "Restarted php8.4-fpm (www-data group refresh)"
+fi
+
+# 6. Restart queue worker to pick up new group
+if systemctl is-active --quiet cipi-queue 2>/dev/null; then
+    systemctl restart cipi-queue 2>/dev/null || true
+    echo "Restarted cipi-queue (group refresh)"
 fi

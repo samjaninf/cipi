@@ -131,7 +131,8 @@ _api_update_package() {
         (cd "${CIPI_API_ROOT}" && composer config repositories.cipi-api path "$pkg_dir" 2>/dev/null) || true
     fi
     (cd "${CIPI_API_ROOT}" && composer update andreapollastri/cipi-api --no-interaction 2>/dev/null) || true
-    (cd "${CIPI_API_ROOT}" && php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
+    chown -R www-data:www-data "${CIPI_API_ROOT}" 2>/dev/null || true
+    (cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
     (cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
     success "cipi-api package updated"
 }
@@ -259,7 +260,8 @@ api_update() {
 
     # Re-publish assets and run migrations
     step "Assets & migrations..."
-    (cd "${CIPI_API_ROOT}" && php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
+    chown -R www-data:www-data "${CIPI_API_ROOT}" 2>/dev/null || true
+    (cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
     (cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
     success "Assets published, migrations applied"
 
@@ -381,6 +383,8 @@ api_status() {
     [[ ! -f "${CIPI_API_CONFIG}" ]] && { error "API not configured. Run: cipi api <domain>"; exit 1; }
     [[ ! -f "${CIPI_API_ROOT}/artisan" ]] && { error "Laravel API app not found."; exit 1; }
 
+    chown -R www-data:www-data "${CIPI_API_ROOT}/storage" "${CIPI_API_ROOT}/database" "${CIPI_API_ROOT}/bootstrap/cache" 2>/dev/null || true
+
     local domain; domain=$(jq -r '.domain' "${CIPI_API_CONFIG}" 2>/dev/null)
 
     echo ""
@@ -399,9 +403,9 @@ api_status() {
     fi
     echo -e "  Queue:      ${queue_status}"
 
-    # Pending jobs
+    # Pending jobs (HOME=/tmp avoids psysh writing to /var/www/.config)
     local pending
-    pending=$(cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan tinker --execute="echo \CipiApi\Models\CipiJob::whereIn('status',['pending','running'])->count();" 2>/dev/null || echo "?")
+    pending=$(cd "${CIPI_API_ROOT}" && sudo -u www-data env HOME=/tmp php artisan tinker --execute="echo \CipiApi\Models\CipiJob::whereIn('status',['pending','running'])->count();" 2>/dev/null || echo "?")
     echo -e "  Jobs:       ${CYAN}${pending} pending${NC}"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -410,7 +414,7 @@ api_status() {
 
 _api_show_versions() {
     local laravel_ver cipi_api_ver
-    laravel_ver=$(cd "${CIPI_API_ROOT}" && php artisan --version 2>/dev/null | grep -oP '[\d.]+' || echo "unknown")
+    laravel_ver=$(cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan --version 2>/dev/null | grep -oP '[\d.]+' || echo "unknown")
     cipi_api_ver=$(cd "${CIPI_API_ROOT}" && composer show andreapollastri/cipi-api 2>/dev/null | grep -oP 'versions\s*:\s*\K.*' || echo "dev")
     echo -e "  Laravel:    ${CYAN}${laravel_ver}${NC}"
     echo -e "  cipi-api:   ${CYAN}${cipi_api_ver}${NC}"
