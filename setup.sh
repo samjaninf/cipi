@@ -13,6 +13,10 @@ REPO="andreapollastri/cipi"
 BRANCH="${1:-latest}"
 BUILD=""  # resolved from version.md after git clone in install_cipi()
 
+CIPI_LIB="/opt/cipi/lib"
+CIPI_CONFIG="/etc/cipi"
+CIPI_LOG="/var/log/cipi"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -338,17 +342,6 @@ EOF
     ufw --force enable &>/dev/null
 
     echo -e "${GREEN}✓ Firewall & fail2ban${NC}"
-
-    # PAM auth notifications (sudo + SSH login alerts)
-    if [[ -x /usr/local/bin/cipi-auth-notify ]]; then
-        if ! grep -q 'cipi-auth-notify' /etc/pam.d/sudo 2>/dev/null; then
-            echo 'session optional pam_exec.so seteuid /usr/local/bin/cipi-auth-notify' >> /etc/pam.d/sudo
-        fi
-        if ! grep -q 'cipi-auth-notify' /etc/pam.d/sshd 2>/dev/null; then
-            echo 'session optional pam_exec.so seteuid /usr/local/bin/cipi-auth-notify' >> /etc/pam.d/sshd
-        fi
-        echo -e "${GREEN}✓ PAM auth notifications${NC}"
-    fi
 }
 
 # ── MARIADB ───────────────────────────────────────────────────
@@ -613,7 +606,7 @@ install_cipi() {
     fi
 
     # Source vault functions now that lib is installed
-    CIPI_LIB="/opt/cipi/lib" CIPI_CONFIG="/etc/cipi" source /opt/cipi/lib/vault.sh
+    source "${CIPI_LIB}/vault.sh"
 
     # Init config files (encrypted)
     for f in apps.json databases.json; do
@@ -639,6 +632,20 @@ install_cipi() {
     rm -rf /tmp/cipi-install
 
     echo -e "${GREEN}✓ Cipi CLI v${BUILD}${NC}"
+}
+
+# ── PAM AUTH NOTIFICATIONS ────────────────────────────────────
+
+setup_pam() {
+    if [[ -x /usr/local/bin/cipi-auth-notify ]]; then
+        if ! grep -q 'cipi-auth-notify' /etc/pam.d/sudo 2>/dev/null; then
+            echo 'session optional pam_exec.so seteuid /usr/local/bin/cipi-auth-notify' >> /etc/pam.d/sudo
+        fi
+        if ! grep -q 'cipi-auth-notify' /etc/pam.d/sshd 2>/dev/null; then
+            echo 'session optional pam_exec.so seteuid /usr/local/bin/cipi-auth-notify' >> /etc/pam.d/sshd
+        fi
+        echo -e "${GREEN}✓ PAM auth notifications${NC}"
+    fi
 }
 
 # ── CRON JOBS ─────────────────────────────────────────────────
@@ -793,7 +800,7 @@ final_summary() {
 
     local SERVER_IP
     SERVER_IP=$(curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null || echo "N/A")
-    CIPI_LIB="/opt/cipi/lib" CIPI_CONFIG="/etc/cipi" source /opt/cipi/lib/vault.sh
+    source "${CIPI_LIB}/vault.sh"
     local _sj; _sj=$(vault_read server.json)
     local DB_ROOT_PASS
     DB_ROOT_PASS=$(echo "$_sj" | jq -r '.db_root_password')
@@ -863,6 +870,7 @@ main() {
     install_redis
     install_certbot
     install_cipi
+    setup_pam
     setup_cron
     final_summary
 }

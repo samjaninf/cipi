@@ -4,8 +4,8 @@
 # Optional: notify on errors (backup, deploy, cron, workers)
 #############################################
 
-readonly SMTP_CFG="${CIPI_CONFIG}/smtp.json"
-readonly SMTP_RC="${CIPI_CONFIG}/.msmtprc"
+[[ -z "${SMTP_CFG:-}" ]] && readonly SMTP_CFG="${CIPI_CONFIG}/smtp.json"
+[[ -z "${SMTP_RC:-}" ]]  && readonly SMTP_RC="${CIPI_CONFIG}/.msmtprc"
 
 _smtp_is_enabled() {
     [[ -f "$SMTP_CFG" ]] && [[ "$(vault_read smtp.json | jq -r '.enabled // false')" == "true" ]]
