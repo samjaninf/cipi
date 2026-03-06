@@ -4,6 +4,10 @@
 # Sends email on successful sudo elevation
 # or root/sudoer SSH login.
 # Called by pam_exec.so (session open).
+#
+# Internal operations (API, queue workers,
+# cron) are silently skipped so only real
+# interactive security events trigger alerts.
 #############################################
 
 [[ "${PAM_TYPE:-}" == "open_session" ]] || exit 0
@@ -33,9 +37,44 @@ USER="${PAM_USER:-unknown}"
 RHOST="${PAM_RHOST:-local}"
 TTY="${PAM_TTY:-unknown}"
 
+# Detect operations triggered by system services rather than interactive users.
+# loginuid 4294967295 = no login session (PHP-FPM, queue workers, cron, systemd).
+# Falls back to process-tree inspection for systems without audit enabled.
+_is_internal() {
+    local luid
+    luid=$(cat /proc/self/loginuid 2>/dev/null) || luid=""
+    [[ "$luid" == "4294967295" ]] && return 0
+
+    local pid=$$ i=0
+    while [[ $pid -gt 1 && $i -lt 20 ]]; do
+        local cmd
+        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || echo "")
+        case "$cmd" in
+            *php-fpm*|*php*artisan*queue*|*supervisord*|*cipi-queue*) return 0 ;;
+        esac
+        pid=$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# Resolve the real user who ran sudo (SUDO_USER is often empty inside PAM).
+_resolve_sudo_user() {
+    [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "unknown" ]] && { echo "$SUDO_USER"; return; }
+    local luid
+    luid=$(cat /proc/self/loginuid 2>/dev/null) || luid=""
+    if [[ -n "$luid" && "$luid" != "4294967295" ]]; then
+        local name
+        name=$(getent passwd "$luid" 2>/dev/null | cut -d: -f1)
+        [[ -n "$name" ]] && { echo "$name"; return; }
+    fi
+    echo "unknown"
+}
+
 case "$SERVICE" in
     sudo)
-        SUDO_BY="${SUDO_USER:-unknown}"
+        _is_internal && exit 0
+        SUDO_BY=$(_resolve_sudo_user)
         SUBJECT="Cipi security: sudo by ${SUDO_BY} (${HOSTNAME})"
         BODY="Sudo elevation detected on ${HOSTNAME}
 

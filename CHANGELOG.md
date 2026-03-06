@@ -4,6 +4,16 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.1.2] — 2026-03-06
+
+### Fixed
+
+- **Auth notifications: suppress internal sudo events** — sudo notifications triggered by Cipi internal operations (API calls via PHP-FPM, queue workers, cron jobs, systemd services) are now silently skipped; only interactive sudo elevations from real SSH sessions generate alerts
+  - Detection via kernel `loginuid` (primary) with process-tree inspection fallback (php-fpm, artisan queue, supervisord, cipi-queue)
+- **Auth notifications: resolve "User: unknown"** — the `SUDO_USER` field in sudo alerts now correctly resolves the calling user via `loginuid` when the PAM environment does not propagate `$SUDO_USER`
+
+---
+
 ## [4.1.1] — 2026-03-06
 
 ### Added
