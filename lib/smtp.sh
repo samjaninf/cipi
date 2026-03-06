@@ -29,7 +29,8 @@ _smtp_write_rc() {
     user=$(echo "$_sj" | jq -r '.user // ""')
     pass=$(echo "$_sj" | jq -r '.password // ""')
     from=$(echo "$_sj" | jq -r '.from // ""')
-    tls=$(echo "$_sj" | jq -r '.tls // true')
+    local tls_raw; tls_raw=$(echo "$_sj" | jq -r '.tls // true')
+    [[ "$tls_raw" == "true" ]] && tls="on" || tls="off"
     # Port 465: implicit TLS, no STARTTLS. Port 587: use STARTTLS.
     [[ "$port" == "465" ]] && starttls="off" || starttls="on"
 
