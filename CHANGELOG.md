@@ -10,6 +10,12 @@ All notable changes to Cipi are documented in this file.
 
 - **Non-interactive SSH key input** — `setup.sh` now accepts `SSH_PUBKEY` environment variable for non-interactive installs (e.g. `SSH_PUBKEY="ssh-rsa ..." bash setup.sh`)
 
+### Fixed
+
+- **SSH key paste in `curl | bash`** — `read` now reads from `/dev/tty` so interactive input works when setup is piped via curl
+- **SSH key sanitization** — automatically strips comments, carriage returns, and extra whitespace from pasted keys before validation
+- **SSH service restart on Ubuntu 24.04** — use `ssh` service name with `sshd` fallback for compatibility across distributions
+
 ---
 
 ## [4.2.0] — 2026-03-08

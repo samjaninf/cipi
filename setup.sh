@@ -169,6 +169,7 @@ collect_ssh_key() {
 
     # Accept key from environment variable or interactive input
     if [[ -n "$SSH_PUBKEY" ]]; then
+        SSH_PUBKEY=$(echo "$SSH_PUBKEY" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk '{print $1, $2}')
         if ! echo "$SSH_PUBKEY" | grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-\S+) '; then
             echo -e "  ${RED}Invalid SSH_PUBKEY format. Must start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-*${NC}"
             exit 1
@@ -179,6 +180,9 @@ collect_ssh_key() {
         while true; do
             echo -en "  ${BOLD}Paste your SSH public key:${NC} "
             read -r SSH_PUBKEY < /dev/tty
+            # Sanitize: trim whitespace, remove carriage returns, strip to key-type + base64 only
+            SSH_PUBKEY=$(echo "$SSH_PUBKEY" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            SSH_PUBKEY=$(echo "$SSH_PUBKEY" | awk '{print $1, $2}')
             if [[ -z "$SSH_PUBKEY" ]]; then
                 echo -e "  ${RED}SSH public key is required.${NC}"
                 continue
@@ -256,7 +260,7 @@ SUDOEOF
     done
 
     # 6. Restart SSH
-    systemctl restart sshd
+    systemctl restart ssh || systemctl restart sshd
 
     echo -e "${GREEN}✓ SSH hardened (key-only, cipi user)${NC}"
 }
