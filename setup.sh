@@ -212,7 +212,9 @@ setup_ssh() {
     ROOT_PASS=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32)
     echo "root:${ROOT_PASS}" | chpasswd
 
-    # Save root password in server.json
+    # Save root password in server.json (create if missing)
+    mkdir -p /etc/cipi
+    [ -f /etc/cipi/server.json ] || echo '{}' > /etc/cipi/server.json
     local tmp
     tmp=$(mktemp)
     jq --arg p "$ROOT_PASS" '. + {root_password: $p}' /etc/cipi/server.json > "$tmp"
