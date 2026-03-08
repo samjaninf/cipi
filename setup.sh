@@ -149,6 +149,109 @@ EOF
     echo -e "${GREEN}✓ System configured${NC}"
 }
 
+# ── SSH: COLLECT KEY (interactive, before long installs) ─────
+
+collect_ssh_key() {
+    echo ""
+    echo -e "${BOLD}SSH Security Setup${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo -e "  Cipi disables root SSH login and password authentication."
+    echo -e "  A ${BOLD}cipi${NC} user will be created as the only SSH entry point."
+    echo -e "  You will need an SSH public key to access the server."
+    echo ""
+    echo -e "  ${CYAN}How to generate one (on your local machine):${NC}"
+    echo -e "  ${DIM}ssh-keygen -t ed25519 -C \"your@email.com\"${NC}"
+    echo -e "  ${DIM}cat ~/.ssh/id_ed25519.pub${NC}"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    SSH_PUBKEY=""
+    while true; do
+        echo -en "  ${BOLD}Paste your SSH public key:${NC} "
+        read -r SSH_PUBKEY
+        if [[ -z "$SSH_PUBKEY" ]]; then
+            echo -e "  ${RED}SSH public key is required.${NC}"
+            continue
+        fi
+        # Validate format (ssh-rsa, ssh-ed25519, ecdsa-sha2-*)
+        if ! echo "$SSH_PUBKEY" | grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-\S+) '; then
+            echo -e "  ${RED}Invalid key format. Must start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-*${NC}"
+            continue
+        fi
+        break
+    done
+
+    echo -e "${GREEN}✓ SSH key accepted${NC}"
+}
+
+# ── SSH HARDENING (applied after base packages are installed) ─
+
+setup_ssh() {
+    step_msg "SSH Hardening..."
+
+    # 1. Create cipi user
+    local CIPI_PASS
+    CIPI_PASS=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    useradd -m -s /bin/bash cipi 2>/dev/null || true
+    echo "cipi:${CIPI_PASS}" | chpasswd
+    usermod -aG sudo cipi
+
+    # 2. Setup user SSH key (owner's key for interactive login)
+    mkdir -p /home/cipi/.ssh
+    echo "$SSH_PUBKEY" > /home/cipi/.ssh/authorized_keys
+    chmod 700 /home/cipi/.ssh
+    chmod 600 /home/cipi/.ssh/authorized_keys
+
+    # 3. Generate server-to-server keypair (used by cipi sync push)
+    if [ ! -f /home/cipi/.ssh/id_ed25519 ]; then
+        ssh-keygen -t ed25519 -C "cipi@$(hostname)" -f /home/cipi/.ssh/id_ed25519 -N "" -q
+    fi
+    chmod 600 /home/cipi/.ssh/id_ed25519
+    chmod 644 /home/cipi/.ssh/id_ed25519.pub
+
+    chown -R cipi:cipi /home/cipi/.ssh
+
+    # 4. Allow cipi to run cipi CLI as root without password
+    cat > /etc/sudoers.d/cipi-sudo <<'SUDOEOF'
+Defaults:cipi env_keep += "SSH_USER_AUTH"
+cipi ALL=(root) NOPASSWD: /usr/local/bin/cipi *
+SUDOEOF
+    chmod 440 /etc/sudoers.d/cipi-sudo
+
+    # 5. Harden sshd_config
+    local SSHD="/etc/ssh/sshd_config"
+    cp "$SSHD" "${SSHD}.bak.$(date +%s)"
+
+    # Apply settings (replace if exists, append if not)
+    local -A ssh_settings=(
+        [PermitRootLogin]="no"
+        [PasswordAuthentication]="no"
+        [PubkeyAuthentication]="yes"
+        [PermitEmptyPasswords]="no"
+        [MaxAuthTries]="3"
+        [LoginGraceTime]="20"
+        [X11Forwarding]="no"
+        [AllowUsers]="cipi"
+        [ExposeAuthInfo]="yes"
+    )
+
+    for key in "${!ssh_settings[@]}"; do
+        local val="${ssh_settings[$key]}"
+        if grep -qE "^#?\s*${key}\b" "$SSHD"; then
+            sed -i "s/^#*\s*${key}\b.*/${key} ${val}/" "$SSHD"
+        else
+            echo "${key} ${val}" >> "$SSHD"
+        fi
+    done
+
+    # 6. Restart SSH
+    systemctl restart sshd
+
+    echo -e "${GREEN}✓ SSH hardened (key-only, cipi user)${NC}"
+}
+
 # ── NGINX ─────────────────────────────────────────────────────
 
 install_nginx() {
@@ -213,7 +316,14 @@ server {
     index index.html;
     server_name _;
     server_tokens off;
-    location / { try_files $uri $uri/ =404; }
+
+    # All requests serve the Server Up page (no 404 leaks)
+    location / {
+        try_files /index.html =444;
+    }
+
+    # Custom error pages — always return the Server Up page
+    error_page 400 401 403 404 405 408 500 502 503 504 /index.html;
 }
 EOF
 
@@ -836,7 +946,17 @@ final_summary() {
     echo -e "  Password:       ${CYAN}${REDIS_PASS}${NC}"
     echo ""
     fi
-    echo -e "  ${YELLOW}${BOLD}⚠ SAVE THESE PASSWORDS!${NC}"
+    echo -e "  ${BOLD}SSH Access${NC}"
+    echo -e "  User:           ${CYAN}cipi${NC} (key-only, sudo enabled)"
+    echo -e "  Login:          ${CYAN}ssh cipi@${SERVER_IP}${NC}"
+    echo -e "  Become root:    ${CYAN}sudo -i${NC}"
+    echo -e "  Root login:     ${RED}disabled${NC}"
+    echo -e "  Password auth:  ${RED}disabled${NC}"
+    echo ""
+    echo -e "  ${BOLD}Server Sync Key${NC} (for cipi sync push between servers)"
+    echo -e "  ${DIM}$(cat /home/cipi/.ssh/id_ed25519.pub 2>/dev/null || echo 'N/A')${NC}"
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}⚠ SAVE THESE CREDENTIALS!${NC}"
     echo ""
     echo -e "  ${BOLD}Getting Started${NC}"
     echo -e "  Server status:  ${CYAN}cipi status${NC}"
@@ -856,9 +976,11 @@ main() {
 
     show_logo
     check_requirements
+    collect_ssh_key
     install_basics
     setup_swap
     setup_system
+    setup_ssh
     install_nginx
     install_firewall
     install_mariadb

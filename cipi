@@ -121,9 +121,16 @@ show_help() {
     echo -e "    ${CYAN}cipi sync import <file> [app ...]${NC}  Import apps from archive"
     echo -e "    ${CYAN}cipi sync push [app ...] [opts]${NC}    Export + transfer to remote server"
     echo -e "    ${CYAN}cipi sync list <file>${NC}              Inspect archive contents"
+    echo -e "    ${CYAN}cipi sync pubkey${NC}                   Show this server's sync public key"
+    echo -e "    ${CYAN}cipi sync trust${NC}                    Trust a remote server's key"
     echo -e "    ${DIM}  export flags: --with-db --with-storage --output=<path>${NC}"
-    echo -e "    ${DIM}  push flags:   --host=IP --port=22 --with-db --with-storage --import${NC}"
+    echo -e "    ${DIM}  push flags:   --host=IP --port=22 --user=cipi --with-db --with-storage --import${NC}"
     echo -e "    ${DIM}  import flags: --update --deploy --yes${NC}"
+    echo ""
+    echo -e "  ${BOLD}${CYAN}SSH KEYS${NC}"
+    echo -e "    ${CYAN}cipi ssh list${NC}                      List authorized SSH keys"
+    echo -e "    ${CYAN}cipi ssh add [key]${NC}                 Add an SSH public key"
+    echo -e "    ${CYAN}cipi ssh remove [n]${NC}                Remove an SSH key by number"
     echo ""
     echo -e "  ${BOLD}${CYAN}SSL / PHP / FIREWALL / BACKUP${NC}"
     echo -e "    ${CYAN}cipi ssl install <app>${NC}              SSL certificate"
@@ -212,6 +219,7 @@ main() {
         api)        require_root; source "${CIPI_LIB}/api.sh";       api_command "$@" ;;
         git)        require_root; source "${CIPI_LIB}/git.sh";       git_command "$@" ;;
         sync)       require_root; source "${CIPI_LIB}/sync.sh";      sync_command "$@" ;;
+        ssh)        require_root; source "${CIPI_LIB}/ssh.sh";       ssh_command "$@" ;;
         smtp)       require_root; source "${CIPI_LIB}/smtp.sh";      smtp_command "$@" ;;
         *) error "Unknown command: $cmd"; echo "Run 'cipi help'"; exit 1 ;;
     esac

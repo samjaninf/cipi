@@ -10,7 +10,9 @@ sync_command() {
         import) _sync_import "$@" ;;
         list)   _sync_list "$@" ;;
         push)   _sync_push "$@" ;;
-        *) error "Use: export import list push"; exit 1 ;;
+        trust)  _sync_trust "$@" ;;
+        pubkey) _sync_pubkey ;;
+        *) error "Use: export import list push trust pubkey"; exit 1 ;;
     esac
 }
 
@@ -777,7 +779,7 @@ _sync_update_app() {
 _sync_push() {
     parse_args "$@"
 
-    local remote_host="${ARG_host:-}" remote_port="${ARG_port:-}" remote_user="${ARG_user:-root}"
+    local remote_host="${ARG_host:-}" remote_port="${ARG_port:-}" remote_user="${ARG_user:-cipi}"
     local remote_import="${ARG_import:-false}"
     local with_db="${ARG_with_db:-false}"
     local with_storage="${ARG_with_storage:-false}"
@@ -813,8 +815,8 @@ _sync_push() {
             echo -e "  ${BOLD}Troubleshooting:${NC}"
             echo -e "  ${DIM}1. Check the IP/hostname is correct${NC}"
             echo -e "  ${DIM}2. Ensure SSH is running on port ${remote_port}${NC}"
-            echo -e "  ${DIM}3. Ensure root login is allowed (PermitRootLogin yes)${NC}"
-            echo -e "  ${DIM}4. Or copy your SSH key: ssh-copy-id -p ${remote_port} ${remote_user}@${remote_host}${NC}"
+            echo -e "  ${DIM}3. Trust this server's key on remote: cipi sync trust${NC}"
+            echo -e "  ${DIM}4. Show this server's public key: cipi sync pubkey${NC}"
             exit 1
         fi
     fi
@@ -824,7 +826,7 @@ _sync_push() {
     step "Checking Cipi on remote..."
     local remote_ver
     remote_ver=$(ssh -p "$remote_port" "${remote_user}@${remote_host}" \
-        "cat /etc/cipi/version 2>/dev/null || echo ''" </dev/null)
+        "sudo cat /etc/cipi/version 2>/dev/null || cat /etc/cipi/version 2>/dev/null || echo ''" </dev/null)
     if [[ -z "$remote_ver" ]]; then
         error "Cipi is not installed on ${remote_host}"
         echo -e "  ${DIM}Install it first: curl -sSL https://cipi.sh/setup.sh | sudo bash${NC}"
@@ -882,7 +884,7 @@ _sync_push() {
         echo ""
         info "Phase 3: Remote Import"
         echo "────────────────────────────────────────────────"
-        local -a remote_cmd=("cipi" "sync" "import" "/tmp/${archive_name}" "--yes" "--update")
+        local -a remote_cmd=("sudo" "cipi" "sync" "import" "/tmp/${archive_name}" "--yes" "--update")
         [[ -n "$passphrase" ]] && remote_cmd+=("--passphrase=${passphrase}")
         [[ ${#app_args[@]} -gt 0 ]] && remote_cmd+=("${app_args[@]}")
 
@@ -917,4 +919,81 @@ _sync_push() {
     fi
 
     log_action "SYNC PUSH: → ${remote_user}@${remote_host}:${remote_port} import=${remote_import}"
+}
+
+# ── PUBKEY (show this server's sync public key) ──────────────
+
+_sync_pubkey() {
+    local keyfile="/home/cipi/.ssh/id_ed25519.pub"
+    if [[ ! -f "$keyfile" ]]; then
+        error "Server sync key not found at ${keyfile}"
+        echo -e "  ${DIM}Re-run setup or generate manually:${NC}"
+        echo -e "  ${CYAN}sudo -u cipi ssh-keygen -t ed25519 -C \"cipi@\$(hostname)\" -f /home/cipi/.ssh/id_ed25519 -N \"\"${NC}"
+        exit 1
+    fi
+
+    echo ""
+    echo -e "  ${BOLD}This server's sync public key:${NC}"
+    echo ""
+    echo -e "  ${CYAN}$(cat "$keyfile")${NC}"
+    echo ""
+    echo -e "  ${DIM}Add this key on the remote server with:${NC}"
+    echo -e "  ${CYAN}cipi sync trust${NC}"
+    echo ""
+}
+
+# ── TRUST (add a remote server's sync key to authorized_keys) ─
+
+_sync_trust() {
+    parse_args "$@"
+
+    local keyfile="/home/cipi/.ssh/authorized_keys"
+    local key="${ARG_key:-}"
+
+    echo ""
+    echo -e "  ${BOLD}Trust a Remote Server${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo -e "  This adds a remote server's public key so it can"
+    echo -e "  connect via ${CYAN}cipi sync push${NC} without a password."
+    echo ""
+    echo -e "  ${DIM}On the source server, run: cipi sync pubkey${NC}"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    if [[ -z "$key" ]]; then
+        echo -en "  ${BOLD}Paste the remote server's public key:${NC} "
+        read -r key
+    fi
+
+    if [[ -z "$key" ]]; then
+        error "No key provided"
+        exit 1
+    fi
+
+    # Validate format
+    if ! echo "$key" | grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-\S+) '; then
+        error "Invalid key format. Must start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-*"
+        exit 1
+    fi
+
+    # Check for duplicates
+    if grep -qF "$key" "$keyfile" 2>/dev/null; then
+        warn "Key already trusted"
+        exit 0
+    fi
+
+    # Append
+    echo "$key" >> "$keyfile"
+    chown cipi:cipi "$keyfile"
+    chmod 600 "$keyfile"
+
+    success "Key added to cipi's authorized_keys"
+    echo ""
+    echo -e "  ${DIM}The remote server can now run:${NC}"
+    echo -e "  ${CYAN}cipi sync push <app> --host=$(curl -s --max-time 3 https://checkip.amazonaws.com 2>/dev/null || hostname)${NC}"
+    echo ""
+
+    log_action "SYNC TRUST: key added"
 }
