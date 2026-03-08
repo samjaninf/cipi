@@ -161,8 +161,18 @@ collect_ssh_key() {
     echo -e "  You will need an SSH public key to access the server."
     echo ""
     echo -e "  ${CYAN}How to generate one (on your local machine):${NC}"
+    echo ""
+    echo -e "  ${BOLD}RSA 4096${NC} — maximum compatibility, works everywhere"
+    echo -e "  ${DIM}ssh-keygen -t rsa -b 4096 -C \"your@email.com\"${NC}"
+    echo -e "  ${DIM}cat ~/.ssh/id_rsa.pub${NC}"
+    echo ""
+    echo -e "  ${BOLD}Ed25519${NC} — modern, faster, smaller keys"
     echo -e "  ${DIM}ssh-keygen -t ed25519 -C \"your@email.com\"${NC}"
     echo -e "  ${DIM}cat ~/.ssh/id_ed25519.pub${NC}"
+    echo ""
+    echo -e "  ${BOLD}ECDSA${NC} — NIST standard, good performance"
+    echo -e "  ${DIM}ssh-keygen -t ecdsa -b 521 -C \"your@email.com\"${NC}"
+    echo -e "  ${DIM}cat ~/.ssh/id_ecdsa.pub${NC}"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
@@ -204,7 +214,19 @@ collect_ssh_key() {
 setup_ssh() {
     step_msg "SSH Hardening..."
 
-    # 1. Create cipi user
+    # 1. Set root password (32 chars, random)
+    local ROOT_PASS
+    ROOT_PASS=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    echo "root:${ROOT_PASS}" | chpasswd
+
+    # Save root password in server.json
+    local tmp
+    tmp=$(mktemp)
+    jq --arg p "$ROOT_PASS" '. + {root_password: $p}' /etc/cipi/server.json > "$tmp"
+    mv "$tmp" /etc/cipi/server.json
+    chmod 600 /etc/cipi/server.json
+
+    # 2. Create cipi user
     local CIPI_PASS
     CIPI_PASS=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32)
     useradd -m -s /bin/bash cipi 2>/dev/null || true
@@ -959,11 +981,17 @@ final_summary() {
     echo -e "  Password:       ${CYAN}${REDIS_PASS}${NC}"
     echo ""
     fi
+    local ROOT_PASS
+    ROOT_PASS=$(echo "$_sj" | jq -r '.root_password // ""')
+
+    echo -e "  ${BOLD}Root${NC}"
+    echo -e "  Password:       ${CYAN}${ROOT_PASS}${NC}"
+    echo -e "  SSH login:      ${RED}disabled${NC} (use sudo -i after SSH)"
+    echo ""
     echo -e "  ${BOLD}SSH Access${NC}"
     echo -e "  User:           ${CYAN}cipi${NC} (key-only, sudo enabled)"
     echo -e "  Login:          ${CYAN}ssh cipi@${SERVER_IP}${NC}"
     echo -e "  Become root:    ${CYAN}sudo -i${NC}"
-    echo -e "  Root login:     ${RED}disabled${NC}"
     echo -e "  Password auth:  ${RED}disabled${NC}"
     echo ""
     echo -e "  ${BOLD}Server Sync Key${NC} (for cipi sync push between servers)"

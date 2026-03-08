@@ -9,6 +9,8 @@ All notable changes to Cipi are documented in this file.
 ### Added
 
 - **Non-interactive SSH key input** — `setup.sh` now accepts `SSH_PUBKEY` environment variable for non-interactive installs (e.g. `SSH_PUBKEY="ssh-rsa ..." bash setup.sh`)
+- **Random root password** — installer generates a 32-character random root password, saves it in server.json, and displays it in the final summary
+- **SSH key generation guide** — setup now shows instructions for all supported key types (RSA 4096, Ed25519, ECDSA) with pros for each
 
 ### Fixed
 
