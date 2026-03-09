@@ -38,17 +38,26 @@ RHOST="${PAM_RHOST:-local}"
 TTY="${PAM_TTY:-unknown}"
 
 # Resolve SSH key name from the key used for the current session.
-# Requires ExposeAuthInfo=yes in sshd_config and SSH_USER_AUTH preserved via sudoers.
+# Method 1: SSH_USER_AUTH env (works for sudo via env_keep).
+# Method 2: auth.log fallback (for sshd PAM where SSH_USER_AUTH isn't yet available).
 _resolve_ssh_key_name() {
-    local auth_file="${SSH_USER_AUTH:-}"
-    [[ -z "$auth_file" || ! -f "$auth_file" ]] && return
+    local fp=""
 
-    local fp
-    fp=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+    local auth_file="${SSH_USER_AUTH:-}"
+    if [[ -n "$auth_file" && -f "$auth_file" ]]; then
+        fp=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+    fi
+
+    if [[ -z "$fp" && -f /var/log/auth.log ]]; then
+        local log_line
+        log_line=$(grep "Accepted publickey for ${USER} from ${RHOST}" /var/log/auth.log 2>/dev/null | tail -1)
+        [[ -n "$log_line" ]] && fp=$(echo "$log_line" | grep -o 'SHA256:[^ ]*')
+    fi
+
     [[ -z "$fp" ]] && return
 
     local ak="/home/cipi/.ssh/authorized_keys"
-    [[ -f "$ak" ]] || return
+    [[ -f "$ak" ]] || { echo "$fp"; return; }
 
     while IFS= read -r line; do
         [[ -z "$line" || "$line" == \#* ]] && continue
