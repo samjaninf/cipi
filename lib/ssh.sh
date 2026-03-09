@@ -222,8 +222,21 @@ _ssh_rename() {
     chown cipi:cipi "$AUTHORIZED_KEYS"
     chmod 600 "$AUTHORIZED_KEYS"
 
+    local old_comment
+    old_comment=$(echo "$selected_key" | awk '{$1=$2=""; print}' | xargs)
+    [[ -z "$old_comment" ]] && old_comment="(no comment)"
+
+    local fingerprint
+    fingerprint=$(echo "$selected_key" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}') || fingerprint="?"
+
     success "Key ${target} renamed to: ${new_name}"
-    log_action "SSH KEY RENAME: ${new_name}"
+    log_action "SSH KEY RENAME: ${old_comment} -> ${new_name}"
+
+    # Email notification
+    local server_ip; server_ip=$(curl -s --max-time 3 https://checkip.amazonaws.com 2>/dev/null || hostname)
+    cipi_notify \
+        "Cipi SSH key renamed on $(hostname)" \
+        "An SSH key was renamed on the cipi user.\n\nServer: $(hostname) (${server_ip})\nOld name: ${old_comment}\nNew name: ${new_name}\nFingerprint: ${fingerprint}\nTime: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 }
 
 # ── REMOVE ───────────────────────────────────────────────────
