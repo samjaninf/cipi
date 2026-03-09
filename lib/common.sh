@@ -16,6 +16,40 @@ log_action() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "${CIPI_LOG}/cipi.log"
 }
 
+_get_client_ip() {
+    if [[ -n "${SSH_CLIENT:-}" ]]; then
+        echo "${SSH_CLIENT%% *}"
+    elif [[ -n "${SSH_CONNECTION:-}" ]]; then
+        echo "${SSH_CONNECTION%% *}"
+    else
+        echo "local"
+    fi
+}
+
+_get_session_key_name() {
+    local auth_file="${SSH_USER_AUTH:-}"
+    [[ -z "$auth_file" || ! -f "$auth_file" ]] && { echo "n/a"; return; }
+
+    local fp
+    fp=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+    [[ -z "$fp" ]] && { echo "n/a"; return; }
+
+    local ak="/home/cipi/.ssh/authorized_keys"
+    [[ -f "$ak" ]] || { echo "$fp"; return; }
+
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        local line_fp
+        line_fp=$(echo "$line" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')
+        if [[ "$line_fp" == "$fp" ]]; then
+            local comment
+            comment=$(echo "$line" | awk '{$1=$2=""; print}' | xargs)
+            [[ -n "$comment" ]] && { echo "$comment"; return; }
+        fi
+    done < "$ak"
+    echo "$fp"
+}
+
 generate_password() { openssl rand -base64 64 | tr -dc 'a-zA-Z0-9' | head -c "${1:-40}"; }
 generate_token()    { openssl rand -hex 32; }
 generate_app_key()  { echo "base64:$(openssl rand -base64 32)"; }

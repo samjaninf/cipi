@@ -187,6 +187,9 @@ _smtp_test() {
 cipi_notify() {
     local subject="$1" body="$2"
     [[ -z "$subject" || -z "$body" ]] && return 0
+    local client_ip; client_ip=$(_get_client_ip 2>/dev/null || echo "n/a")
+    local key_name; key_name=$(_get_session_key_name 2>/dev/null || echo "n/a")
+    body="${body}\n\n---\nPerformed by: ${client_ip}\nSSH Key: ${key_name}"
     _smtp_send "$subject" "$body" || true
 }
 
