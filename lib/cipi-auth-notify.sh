@@ -137,6 +137,19 @@ SSH Key:   ${SSH_KEY_NAME}
 TTY:       ${TTY}
 Time:      ${TIMESTAMP}"
         ;;
+    su)
+        _is_internal && exit 0
+        SU_BY=$(_resolve_sudo_user)
+        SUBJECT="Cipi security: su to ${USER} by ${SU_BY} (${HOSTNAME})"
+        BODY="su elevation detected on ${HOSTNAME}
+
+User:      ${SU_BY}
+Target:    ${USER}
+SSH Key:   ${SSH_KEY_NAME}
+From:      ${RHOST}
+TTY:       ${TTY}
+Time:      ${TIMESTAMP}"
+        ;;
     *)
         exit 0
         ;;
