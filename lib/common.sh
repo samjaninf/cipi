@@ -37,9 +37,15 @@ _get_session_key_name() {
     local fp=""
 
     # Method 1: SSH_USER_AUTH (requires ExposeAuthInfo=yes + env_keep in sudoers)
+    # Format: publickey <key_type> <raw_key_data> — field 3 is raw key, not fingerprint
     local auth_file="${SSH_USER_AUTH:-}"
     if [[ -n "$auth_file" && -f "$auth_file" ]]; then
-        fp=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+        local key_type key_data
+        key_type=$(awk '/^publickey / {print $2; exit}' "$auth_file" 2>/dev/null)
+        key_data=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+        if [[ -n "$key_type" && -n "$key_data" ]]; then
+            fp=$(echo "$key_type $key_data" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')
+        fi
     fi
 
     # Method 2: auth.log fallback

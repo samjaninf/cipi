@@ -20,14 +20,18 @@ ssh_command() {
 
 # Get the fingerprint of the SSH key used for the current session.
 # Requires ExposeAuthInfo=yes in sshd_config and SSH_USER_AUTH env preserved via sudoers.
+# SSH_USER_AUTH format: publickey <key_type> <raw_key_data> — field 3 is raw key, not fingerprint
 _get_session_fingerprint() {
     local auth_file="${SSH_USER_AUTH:-}"
     [[ -z "$auth_file" || ! -f "$auth_file" ]] && return
 
-    # SSH_USER_AUTH file contains lines like: publickey ssh-ed25519 SHA256:xxxxx
-    local fp
-    fp=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
-    [[ -n "$fp" ]] && echo "$fp"
+    local key_type key_data fp
+    key_type=$(awk '/^publickey / {print $2; exit}' "$auth_file" 2>/dev/null)
+    key_data=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+    if [[ -n "$key_type" && -n "$key_data" ]]; then
+        fp=$(echo "$key_type $key_data" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')
+        [[ -n "$fp" ]] && echo "$fp"
+    fi
 }
 
 # ── LIST ─────────────────────────────────────────────────────

@@ -865,7 +865,7 @@ APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 AUEOF
 
-    (crontab -l 2>/dev/null | grep -v "CIPI"; cat <<'CRONEOF'
+    (crontab -l 2>/dev/null | grep -v "CIPI" || true; cat <<'CRONEOF'
 # === CIPI CRON JOBS ===
 # Cipi self-update (daily 3:50 AM)
 50 3 * * * /usr/local/bin/cipi-cron-notify self-update /usr/local/bin/cipi self-update >> /var/log/cipi/cipi.log 2>&1
@@ -1061,8 +1061,8 @@ main() {
     install_redis
     install_certbot
     install_cipi
-    setup_pam
-    setup_cron
+    setup_pam || echo -e "${YELLOW}⚠ setup_pam failed, continuing...${NC}"
+    setup_cron || echo -e "${YELLOW}⚠ setup_cron failed, continuing...${NC}"
     final_summary
 }
 

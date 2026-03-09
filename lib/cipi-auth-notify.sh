@@ -8,6 +8,10 @@
 # Internal operations (API, queue workers,
 # cron) are silently skipped so only real
 # interactive security events trigger alerts.
+#
+# Privileged-to-inferior: notifications from
+# cipi/root towards app users (non-sudo) are
+# suppressed unless part of app create/edit/delete.
 #############################################
 
 [[ "${PAM_TYPE:-}" == "open_session" ]] || exit 0
@@ -37,7 +41,12 @@ _resolve_ssh_key_name() {
 
     local auth_file="${SSH_USER_AUTH:-}"
     if [[ -n "$auth_file" && -f "$auth_file" ]]; then
-        fp=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+        local key_type key_data
+        key_type=$(awk '/^publickey / {print $2; exit}' "$auth_file" 2>/dev/null)
+        key_data=$(awk '/^publickey / {print $3; exit}' "$auth_file" 2>/dev/null)
+        if [[ -n "$key_type" && -n "$key_data" ]]; then
+            fp=$(echo "$key_type $key_data" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')
+        fi
     fi
 
     if [[ -z "$fp" && -f /var/log/auth.log ]]; then
@@ -100,12 +109,52 @@ _resolve_sudo_user() {
     echo "unknown"
 }
 
+# Source is cipi or root (privileged admin)
+_is_privileged_source() {
+    [[ "$1" == "cipi" || "$1" == "root" ]]
+}
+
+# Target is inferior user (not root, not in sudo group — e.g. app users)
+_is_inferior_user() {
+    local u="${1:-}"
+    [[ -z "$u" || "$u" == "root" ]] && return 1
+    id -nG "$u" 2>/dev/null | grep -qw sudo && return 1
+    return 0
+}
+
+# Check if this session is part of cipi app create/edit/delete (allow notification)
+_is_app_lifecycle_operation() {
+    local pid=$$ i=0
+    while [[ $pid -gt 1 && $i -lt 25 ]]; do
+        local cmd
+        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || echo "")
+        if [[ "$cmd" == *"cipi"* ]]; then
+            case "$cmd" in
+                *"app create"*|*"app edit"*|*"app delete"*) return 0 ;;
+            esac
+        fi
+        pid=$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# Skip notification: privileged source (cipi/root) -> inferior target, unless app lifecycle
+_should_suppress_privileged_to_inferior() {
+    local source="$1" target="$2"
+    _is_privileged_source "$source" || return 1
+    _is_inferior_user "$target" || return 1
+    _is_app_lifecycle_operation && return 1
+    return 0
+}
+
 # ── Build event ──────────────────────────────────────────────
 
 case "$SERVICE" in
     sudo)
         _is_internal && exit 0
         SUDO_BY=$(_resolve_sudo_user)
+        _should_suppress_privileged_to_inferior "$SUDO_BY" "$USER" && exit 0
         SSH_KEY_NAME=$(_resolve_ssh_key_name "$SUDO_BY")
         [[ -z "$SSH_KEY_NAME" ]] && SSH_KEY_NAME="unknown"
         DISPLAY_FROM="${RESOLVED_CLIENT_IP:-$RHOST}"
@@ -140,6 +189,7 @@ Time:      ${TIMESTAMP}"
     su)
         _is_internal && exit 0
         SU_BY=$(_resolve_sudo_user)
+        _should_suppress_privileged_to_inferior "$SU_BY" "$USER" && exit 0
         SSH_KEY_NAME=$(_resolve_ssh_key_name "$SU_BY")
         [[ -z "$SSH_KEY_NAME" ]] && SSH_KEY_NAME="unknown"
         DISPLAY_FROM="${RESOLVED_CLIENT_IP:-$RHOST}"

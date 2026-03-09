@@ -3,6 +3,9 @@
 # Cipi — Sync (Export / Import / List)
 #############################################
 
+# Set by _sync_export when called from _sync_push (avoids glob lookup)
+_SYNC_LAST_ARCHIVE=""
+
 sync_command() {
     local sub="${1:-}"; shift||true
     case "$sub" in
@@ -25,6 +28,7 @@ _sync_export() {
     local with_storage="${ARG_with_storage:-false}"
     local output="${ARG_output:-}"
     local passphrase="${ARG_passphrase:-}"
+    local internal_push="${ARG_internal_push:-false}"
     local ts; ts=$(date +%Y%m%d_%H%M%S)
     local hostname; hostname=$(hostname 2>/dev/null || echo "unknown")
     local tmp="/tmp/cipi-sync-${ts}"
@@ -187,14 +191,18 @@ _sync_export() {
     echo -e "  Apps:     ${CYAN}${#apps[@]}${NC} (${apps[*]})"
     echo -e "  Database: ${CYAN}${with_db}${NC}"
     echo -e "  Storage:  ${CYAN}${with_storage}${NC}"
-    echo ""
-    echo -e "  ${BOLD}Transfer to target server:${NC}"
-    echo -e "  ${CYAN}scp ${archive} root@<target>:/tmp/${NC}"
-    echo ""
-    echo -e "  ${BOLD}Then import:${NC}"
-    echo -e "  ${CYAN}cipi sync import /tmp/$(basename "$archive")${NC}"
+    if [[ "$internal_push" != "true" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Transfer to target server:${NC}"
+        echo -e "  ${CYAN}scp -i /home/cipi/.ssh/id_ed25519 ${archive} cipi@<target>:/tmp/${NC}"
+        echo -e "  ${DIM}(Run cipi sync trust on target first if needed)${NC}"
+        echo ""
+        echo -e "  ${BOLD}Then import:${NC}"
+        echo -e "  ${CYAN}cipi sync import /tmp/$(basename "$archive")${NC}"
+    fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log_action "SYNC EXPORT: ${#apps[@]} apps (${apps[*]}) db=${with_db} storage=${with_storage} → ${archive}"
+    [[ "$internal_push" == "true" ]] && _SYNC_LAST_ARCHIVE="$archive"
 }
 
 # ── LIST (inspect archive) ────────────────────────────────────
@@ -453,6 +461,11 @@ _sync_import() {
     done
 
     rm -rf "$tmp"
+
+    # Remove archive after successful import/update (frees disk space)
+    if [[ ${#imported[@]} -gt 0 || ${#updated[@]} -gt 0 ]]; then
+        rm -f "$file"
+    fi
 
     # Summary
     echo ""
@@ -800,16 +813,19 @@ _sync_push() {
     echo ""
     info "Target: ${remote_user}@${remote_host}:${remote_port}"
 
+    # Use cipi's sync key (works when cipi is run as root)
+    local ssh_identity="/home/cipi/.ssh/id_ed25519"
+    local ssh_opts="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p ${remote_port}"
+    [[ -f "$ssh_identity" ]] && ssh_opts="-i ${ssh_identity} ${ssh_opts}"
+
     # Test SSH connectivity
     step "Testing SSH connection..."
-    if ! ssh -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-            -p "$remote_port" "${remote_user}@${remote_host}" "echo ok" &>/dev/null; then
+    if ! ssh ${ssh_opts} -o BatchMode=yes "${remote_user}@${remote_host}" "echo ok" &>/dev/null; then
         echo ""
         warn "SSH key-based auth failed. Trying with password..."
-        echo -e "${DIM}  You may be prompted for the root password of ${remote_host}${NC}"
+        echo -e "${DIM}  You may be prompted for the password of ${remote_user}@${remote_host}${NC}"
         echo ""
-        if ! ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
-                -p "$remote_port" "${remote_user}@${remote_host}" "echo ok" </dev/tty; then
+        if ! ssh ${ssh_opts} "${remote_user}@${remote_host}" "echo ok" </dev/tty; then
             error "Cannot connect to ${remote_user}@${remote_host}:${remote_port}"
             echo ""
             echo -e "  ${BOLD}Troubleshooting:${NC}"
@@ -822,21 +838,20 @@ _sync_push() {
     fi
     success "SSH connection OK"
 
-    # Verify Cipi is installed on remote
+    # Verify Cipi is installed on remote (use 'cipi version' — cipi can only sudo cipi *)
     step "Checking Cipi on remote..."
     local remote_ver
-    remote_ver=$(ssh -p "$remote_port" "${remote_user}@${remote_host}" \
-        "sudo cat /etc/cipi/version 2>/dev/null || cat /etc/cipi/version 2>/dev/null || echo ''" </dev/null)
+    remote_ver=$(ssh ${ssh_opts} "${remote_user}@${remote_host}" \
+        "sudo cipi version 2>/dev/null" </dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
     if [[ -z "$remote_ver" ]]; then
         error "Cipi is not installed on ${remote_host}"
         echo -e "  ${DIM}Install it first: curl -sSL https://cipi.sh/setup.sh | sudo bash${NC}"
         exit 1
     fi
-    remote_ver=$(echo "$remote_ver" | tr -d '[:space:]')
     success "Remote Cipi v${remote_ver}"
 
-    # Build export flags
-    local -a export_flags=()
+    # Build export flags (--internal-push suppresses manual transfer instructions)
+    local -a export_flags=("--internal-push")
     [[ "$with_db" == "true" ]] && export_flags+=("--with-db")
     [[ "$with_storage" == "true" ]] && export_flags+=("--with-storage")
     [[ -n "$passphrase" ]] && export_flags+=("--passphrase=${passphrase}")
@@ -847,33 +862,49 @@ _sync_push() {
     echo "────────────────────────────────────────────────"
     _sync_export "${app_args[@]}" "${export_flags[@]}" 2>&1
 
-    # Find the archive that was just created (encrypted .enc or plain .tar.gz)
+    # Find the archive (use path from export when available, else glob)
     local archive
-    archive=$(ls -t /tmp/cipi-sync-*.tar.gz.enc /tmp/cipi-sync-*.tar.gz 2>/dev/null | head -1)
+    if [[ -n "${_SYNC_LAST_ARCHIVE:-}" && -f "${_SYNC_LAST_ARCHIVE}" ]]; then
+        archive="$_SYNC_LAST_ARCHIVE"
+        _SYNC_LAST_ARCHIVE=""
+    else
+        archive=$(ls -t /tmp/cipi-sync-*.tar.gz.enc /tmp/cipi-sync-*.tar.gz 2>/dev/null | head -1)
+    fi
     [[ -z "$archive" || ! -f "$archive" ]] && { error "Export archive not found"; exit 1; }
 
     local archive_name; archive_name=$(basename "$archive")
     local archive_sz; archive_sz=$(du -h "$archive" | cut -f1)
 
-    # Transfer via rsync (falls back to scp)
+    # Transfer via rsync (falls back to scp) — run as cipi user so ~/.ssh/id_ed25519 is used
     echo ""
     info "Phase 2: Transfer (${archive_sz})"
     echo "────────────────────────────────────────────────"
     step "Sending ${archive_name} → ${remote_host}:/tmp/"
 
+    local rsync_ssh="ssh -p ${remote_port} -o StrictHostKeyChecking=accept-new"
+    local scp_opts="-P ${remote_port} -o StrictHostKeyChecking=accept-new"
+
+    local transferred=false
     if command -v rsync &>/dev/null; then
-        if rsync -az --progress -e "ssh -p ${remote_port}" \
+        if sudo -u cipi rsync -az --progress -e "$rsync_ssh" \
                 "$archive" "${remote_user}@${remote_host}:/tmp/${archive_name}"; then
             success "Transfer complete (rsync)"
+            transferred=true
         else
-            error "rsync transfer failed"; exit 1
+            warn "rsync failed, trying scp..."
         fi
-    else
-        if scp -P "$remote_port" "$archive" "${remote_user}@${remote_host}:/tmp/${archive_name}"; then
+    fi
+    if [[ "$transferred" != "true" ]]; then
+        if sudo -u cipi scp ${scp_opts} "$archive" "${remote_user}@${remote_host}:/tmp/${archive_name}"; then
             success "Transfer complete (scp)"
-        else
-            error "scp transfer failed"; exit 1
+            transferred=true
         fi
+    fi
+    if [[ "$transferred" != "true" ]]; then
+        error "Transfer failed (tried rsync and scp)"
+        echo -e "  ${DIM}Ensure cipi sync trust was run on ${remote_host}${NC}"
+        echo -e "  ${DIM}Test manually: sudo -u cipi scp -P ${remote_port} ${archive} ${remote_user}@${remote_host}:/tmp/${NC}"
+        exit 1
     fi
 
     # Clean up local archive
@@ -890,7 +921,7 @@ _sync_push() {
 
         step "Running: ${remote_cmd[*]}"
         echo ""
-        ssh -t -p "$remote_port" "${remote_user}@${remote_host}" "${remote_cmd[*]}"
+        ssh -t ${ssh_opts} "${remote_user}@${remote_host}" "${remote_cmd[*]}"
         local rc=$?
         echo ""
         if [[ $rc -eq 0 ]]; then

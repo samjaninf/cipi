@@ -27,12 +27,17 @@ _ensure_awscli() {
     fi
 }
 
-# Wrapper: adds --endpoint-url when a custom endpoint is configured
+# Wrapper: adds --endpoint-url and --region when a custom endpoint is configured.
+# S3-compatible APIs can fail with "NoneType is not iterable" if region is empty.
 _aws_s3() {
-    local ep=""
-    [[ -f "${CIPI_CONFIG}/backup.json" ]] && ep=$(vault_read backup.json | jq -r '.endpoint_url // ""')
+    local ep="" region=""
+    if [[ -f "${CIPI_CONFIG}/backup.json" ]]; then
+        local _bkj; _bkj=$(vault_read backup.json)
+        ep=$(echo "$_bkj" | jq -r '.endpoint_url // ""')
+        region=$(echo "$_bkj" | jq -r '.region // "eu-central-1"')
+    fi
     if [[ -n "$ep" ]]; then
-        aws s3 --endpoint-url "$ep" "$@"
+        aws s3 --endpoint-url "$ep" --region "${region:-eu-central-1}" "$@"
     else
         aws s3 "$@"
     fi
@@ -62,6 +67,9 @@ _bk_configure() {
     echo -e "  ${DIM}  Backblaze:  https://s3.<region>.backblazeb2.com${NC}"
     echo -e "  ${DIM}  MinIO:      https://your-minio-host${NC}"
     read_input "Endpoint URL (optional)" "$ce" ce
+
+    # Region must not be empty — AWS CLI fails with "NoneType is not iterable" when region is blank
+    cr="${cr:-eu-central-1}"
 
     jq -n \
         --arg k "$ck" --arg s "$cs" --arg b "$cb" \
