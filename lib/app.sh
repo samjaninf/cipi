@@ -181,12 +181,15 @@ CRON
     _create_deployer_config "$app_user" "$repository" "$branch" "$php_ver"
     success "Deployer"
 
-    # 12. Sudoers (worker restart only)
+    # 12. Sudoers (worker + deploy + ssl, scoped to own app)
     step "Permissions..."
     cat > "/etc/sudoers.d/cipi-${app_user}" <<SUDO
 ${app_user} ALL=(root) NOPASSWD: /usr/local/bin/cipi-worker restart ${app_user}
 ${app_user} ALL=(root) NOPASSWD: /usr/local/bin/cipi-worker stop ${app_user}
 ${app_user} ALL=(root) NOPASSWD: /usr/local/bin/cipi-worker status ${app_user}
+${app_user} ALL=(root) NOPASSWD: /usr/local/bin/cipi deploy ${app_user}
+${app_user} ALL=(root) NOPASSWD: /usr/local/bin/cipi deploy ${app_user} *
+${app_user} ALL=(root) NOPASSWD: /usr/local/bin/cipi ssl install ${app_user}
 SUDO
     chmod 440 "/etc/sudoers.d/cipi-${app_user}"
     success "Permissions"

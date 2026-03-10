@@ -4,6 +4,20 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.2.8] — 2026-03-10
+
+### Changed
+
+- **Auth notifications: cipi→root only** — PAM auth notification emails are now sent exclusively when user `cipi` escalates to root (via sudo or su), including the SSH key name/comment; all other events (SSH logins, other users' escalations) are silenced but still logged to `/var/log/cipi/events.log`
+
+### Added
+
+- **App user self-service: deploy** — app users can now run `sudo cipi deploy <app>` (and `--rollback`, `--releases`, `--unlock`, `--key`, `--webhook`) scoped to their own app only; `sudo cipi deploy otherapp` is blocked by sudoers
+- **App user self-service: SSL install** — app users can now run `sudo cipi ssl install <app>` scoped to their own app only
+- **Migration 4.2.8** — patches existing app sudoers files to add deploy and ssl install permissions
+
+---
+
 ## [4.2.7] — 2026-03-10
 
 ### Fixed
