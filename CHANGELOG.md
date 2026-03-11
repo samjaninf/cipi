@@ -4,6 +4,18 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.2.8] — 2026-03-11
+
+### Fixed
+
+- **MariaDB version detection** — Installation summary showed the mysql client protocol number (e.g. `15.2`) instead of the actual MariaDB server version; replaced deprecated `mysql --version` with `mariadb --version` and proper `Distrib` field parsing
+
+### Changed
+
+- **su elevation notifications** — Restricted `su` email alerts to only the `cipi → root` escalation; all other `su` transitions are now silently ignored to reduce noise
+
+---
+
 ## [4.2.7] — 2026-03-10
 
 ### Fixed

@@ -992,7 +992,7 @@ final_summary() {
     echo ""
     echo -e "  ${BOLD}Stack${NC}"
     echo -e "  Nginx:          ${CYAN}$(nginx -v 2>&1 | awk -F/ '{print $2}')${NC}"
-    echo -e "  MariaDB:        ${CYAN}$(mysql --version 2>/dev/null | awk '{print $5}' | tr -d ',')${NC}"
+    echo -e "  MariaDB:        ${CYAN}$(mariadb --version 2>/dev/null | grep -oP 'Distrib \K[^,]+' || echo "N/A")${NC}"
     echo -e "  Redis:          ${CYAN}$(redis-server --version 2>/dev/null | awk '{print $3}' || echo "N/A")${NC}"
     echo -e "  PHP:            ${CYAN}8.4, 8.5${NC}"
     echo -e "  Node.js:        ${CYAN}$(node -v 2>/dev/null)${NC}"

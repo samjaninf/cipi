@@ -190,7 +190,8 @@ Time:      ${TIMESTAMP}"
     su)
         _is_internal && exit 0
         SU_BY=$(_resolve_sudo_user)
-        _should_suppress_privileged_to_inferior "$SU_BY" "$USER" && exit 0
+        # Only notify when cipi elevates to root; ignore every other su
+        [[ "$SU_BY" == "cipi" && "$USER" == "root" ]] || exit 0
         SSH_KEY_NAME=$(_resolve_ssh_key_name "$SU_BY")
         [[ -z "$SSH_KEY_NAME" ]] && SSH_KEY_NAME="unknown"
         DISPLAY_FROM="${RESOLVED_CLIENT_IP:-$RHOST}"
