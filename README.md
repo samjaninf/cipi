@@ -4,13 +4,13 @@
 
 # Cipi
 
-**PHP hosting without the cognitive overhead. Laravel first.**  
+**Easy Laravel Deployments**  
 One command installs a complete production stack. One command deploys your app.<br>
 No panel, no bloat — so you can focus on what you love: building your application.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/cipi-sh/cipi?style=flat&color=yellow)](https://github.com/cipi-sh/cipi/stargazers)
-[![Version](https://img.shields.io/badge/version-4.2.6-green.svg)](https://github.com/cipi-sh/cipi/releases)
+[![Version](https://img.shields.io/badge/version-4.3.3-green.svg)](https://github.com/cipi-sh/cipi/releases)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%2B-orange.svg)](https://ubuntu.com)
 
 [Website](https://cipi.sh) · [Docs](https://cipi.sh/docs) · [Report a bug](https://github.com/cipi-sh/cipi/issues)
@@ -21,7 +21,7 @@ No panel, no bloat — so you can focus on what you love: building your applicat
 
 ## What is Cipi?
 
-Cipi turns any Ubuntu VPS into a **multi-app PHP hosting platform — Laravel first** — with full isolation, zero-downtime deploys, SSL, queue workers, and S3 backups — all managed from a single CLI.
+Cipi turns any Ubuntu VPS into a **multi-app PHP hosting platform** — Laravel by default, with full isolation, zero-downtime deploys, SSL, queue workers, and S3 backups — all managed from a single CLI. Use **`--custom`** for simple sites: classic deploy (no releases/shared), configurable docroot and Nginx (try_files, entry point), no DB or cron.
 
 No web panel. No bloat. No sleepless nights fighting Nginx configs or PHP-FPM pools.  
 Just SSH and the `cipi` command.
@@ -42,12 +42,13 @@ $ wget -O - https://cipi.sh/setup.sh | bash
 wget -O - https://cipi.sh/setup.sh | bash
 ```
 
-**2. Create your app** (Laravel by default) and answer a few prompts:
+**2. Create your app** (Laravel by default, or `cipi app create --custom` for a simple deploy):
 
 ```bash
 cipi app create
 # username, domain, git repo, branch, PHP version
-# → Cipi sets up everything: user, DB, Nginx, workers, cron
+# → Laravel: user, DB, Nginx, workers, cron, webhook
+# → Custom: user, Nginx, PHP-FPM, deploy key (no DB, no cron, no webhook)
 ```
 
 **3. Deploy and go live:**
@@ -63,15 +64,15 @@ That's it. Your Laravel app is live.
 
 ## Stack
 
-Every app gets a fully isolated environment. Laravel first; same stack for WordPress, static sites, and generic PHP.
+Every app gets a fully isolated environment. **Laravel** (default): zero-downtime deploy, DB, workers, cron, webhook. **`--custom`**: classic deploy into `htdocs`, configurable docroot and Nginx (try_files: index.php / index.html / 404.html; entry: index.php or index.html), no DB, no .env, no cron, no workers.
 
 | Component          | Details                                                                 |
 | ------------------ | ----------------------------------------------------------------------- |
 | **Web server**     | Nginx reverse proxy with per-app virtual hosts, optimized for Laravel   |
 | **PHP & Composer** | Selectable per app — PHP 7.4 to 8.5, hot-swappable                      |
-| **Database**       | MariaDB, auto-tuned to RAM, dedicated DB and user per app               |
-| **Queue workers**  | Supervisor with per-app pools — add, scale, monitor                     |
-| **Deployments**    | Deployer — atomic symlink swap, keeps last 5 releases, instant rollback |
+| **Database**       | MariaDB, auto-tuned to RAM, dedicated DB and user per Laravel app        |
+| **Queue workers**  | Supervisor with per-app pools (Laravel) — add, scale, monitor           |
+| **Deployments**    | Deployer — Laravel: atomic symlink, 5 releases, rollback; Custom: clone into htdocs |
 | **SSL**            | Let's Encrypt via Certbot with SAN support and auto-renewal             |
 | **Security**       | Fail2ban + UFW, per-app Linux user + PHP-FPM pool + SSH key             |
 | **Backups**        | Automated DB and storage dumps to S3 or any compatible provider         |
@@ -92,9 +93,9 @@ Deployer clones your repo, runs `composer install`, links storage, runs migratio
 
 Native GitHub and GitLab integration — deploy keys and webhooks configured automatically. HMAC signature verification. Or plug in any custom Git provider.
 
-### 📦 Multiple App Types
+### 📦 App Types
 
-Laravel first; then WordPress, static, and generic PHP from the same CLI. Use **`--wordpress`** for WordPress (shared wp-config and wp-content, no webhook), **`--static`** for static sites and SPAs (index.html + 404.html, no DB or PHP; docroot: `/`, `build`, `dist`, `out`, `docs`, `public`), **`--generic`** for any PHP app (configurable docroot: `/`, `public`, `web`, `htdocs`, `www`; DB and minimal .env; no webhook). No cron or workers for WordPress, static, or generic — just Nginx, deploy key, and optional DB.
+**Laravel** (default) — zero-downtime deploy with releases, shared storage, workers, scheduler, webhook. **`--custom`** — for simple sites: classic deploy into `htdocs` (no current/shared), choose docroot (e.g. `/`, `www`, `dist`), Nginx try_files (index.php, index.html, or 404.html), and entry point (index.php or index.html). No DB, no .env, no cron, no workers, no webhook — just Nginx, PHP-FPM, and deploy key.
 
 ### 🌐 Aliases & SSL
 
