@@ -9,6 +9,7 @@ app_create() {
     parse_args "$@"
     local app_user="${ARG_user:-}" domain="${ARG_domain:-}" repository="${ARG_repository:-}"
     local branch="${ARG_branch:-main}" php_ver="${ARG_php:-8.5}"
+    local is_wp="${ARG_wordpress:-false}"
 
     # Interactive prompts for missing fields
     [[ -z "$app_user" ]]    && read_input "App username (lowercase, min 3 chars)" "" app_user
@@ -31,8 +32,13 @@ app_create() {
     local user_pass db_pass webhook_token app_key home
     user_pass=$(generate_password 40)
     db_pass=$(generate_password 40)
-    webhook_token=$(generate_token)
-    app_key=$(generate_app_key)
+    if [[ "$is_wp" != "true" ]]; then
+        webhook_token=$(generate_token)
+        app_key=$(generate_app_key)
+    else
+        webhook_token=""
+        app_key=""
+    fi
     home="/home/${app_user}"
 
     # 1. Linux user
@@ -45,8 +51,21 @@ app_create() {
 
     # 2. Directories
     step "Directories..."
-    mkdir -p "${home}"/{shared/storage/{app/public,framework/{cache/data,sessions,views},logs},logs,.ssh,.deployer}
-    cat > "${home}/.bashrc" <<BASH
+    if [[ "$is_wp" == "true" ]]; then
+        mkdir -p "${home}"/{shared/wp-content/{uploads,plugins,themes},logs,.ssh,.deployer}
+    else
+        mkdir -p "${home}"/{shared/storage/{app/public,framework/{cache/data,sessions,views},logs},logs,.ssh,.deployer}
+    fi
+    if [[ "$is_wp" == "true" ]]; then
+        cat > "${home}/.bashrc" <<BASH
+export PATH="/usr/local/bin:\$PATH"
+alias php='/usr/bin/php${php_ver}'
+alias composer='/usr/bin/php${php_ver} /usr/local/bin/composer'
+alias deploy='/usr/bin/php${php_ver} /usr/local/bin/dep deploy -f ${home}/.deployer/deploy.php'
+PS1='\[\033[0;32m\]\u\[\033[0m\]@\h:\[\033[0;34m\]\w\[\033[0m\]\$ '
+BASH
+    else
+        cat > "${home}/.bashrc" <<BASH
 export PATH="/usr/local/bin:\$PATH"
 alias php='/usr/bin/php${php_ver}'
 alias artisan='php ${home}/current/artisan'
@@ -55,6 +74,7 @@ alias tinker='artisan tinker'
 alias deploy='/usr/bin/php${php_ver} /usr/local/bin/dep deploy -f ${home}/.deployer/deploy.php'
 PS1='\[\033[0;32m\]\u\[\033[0m\]@\h:\[\033[0;34m\]\w\[\033[0m\]\$ '
 BASH
+    fi
     chown -R "${app_user}:${app_user}" "$home"
     success "Directories"
 
@@ -70,9 +90,13 @@ BASH
     chmod 600 "${home}/.ssh/known_hosts"
     success "Deploy key"
 
-    # 3b. Git provider integration (auto-add deploy key + webhook)
+    # 3b. Git provider integration (auto-add deploy key; webhook only for Laravel)
     source "${CIPI_LIB}/git.sh"
-    git_setup_repo "$app_user" "$repository" "$domain" "$webhook_token" "$deploy_key"
+    if [[ "$is_wp" == "true" ]]; then
+        git_setup_repo "$app_user" "$repository" "$domain" "" "$deploy_key" "skip_webhook"
+    else
+        git_setup_repo "$app_user" "$repository" "$domain" "$webhook_token" "$deploy_key"
+    fi
 
     # 4. MariaDB database
     step "Database..."
@@ -87,9 +111,37 @@ FLUSH PRIVILEGES;
 SQL
     success "Database"
 
-    # 5. .env (auto-compiled by Cipi)
-    step ".env..."
-    cat > "${home}/shared/.env" <<ENV
+    # 5. Config: .env (Laravel) or wp-config.php (WordPress)
+    if [[ "$is_wp" == "true" ]]; then
+        step "wp-config.php..."
+        local wp_table_prefix="wp_"
+        local wp_keys
+        wp_keys=$(curl -sL https://api.wordpress.org/secret-key/1.1/salt/ 2>/dev/null || echo "")
+        cat > "${home}/shared/wp-config.php" <<WPCONFIG
+<?php
+/**
+ * Cipi-generated wp-config.php (shared). Deployer symlinks this to release/wp-config.php.
+ * ABSPATH points to current (release) so wp-settings.php loads from the codebase.
+ */
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__ . '/../current/');
+}
+define('DB_NAME', '${app_user}');
+define('DB_USER', '${app_user}');
+define('DB_PASSWORD', '${db_pass}');
+define('DB_HOST', '127.0.0.1');
+define('DB_CHARSET', 'utf8mb4');
+define('DB_COLLATE', '');
+\$table_prefix = '${wp_table_prefix}';
+${wp_keys}
+require_once ABSPATH . 'wp-settings.php';
+WPCONFIG
+        chown "${app_user}:${app_user}" "${home}/shared/wp-config.php"
+        chmod 640 "${home}/shared/wp-config.php"
+        success "wp-config.php in shared"
+    else
+        step ".env..."
+        cat > "${home}/shared/.env" <<ENV
 APP_NAME="${app_user}"
 APP_ENV=production
 APP_KEY=${app_key}
@@ -117,9 +169,10 @@ CIPI_WEBHOOK_TOKEN=${webhook_token}
 CIPI_APP_USER=${app_user}
 CIPI_PHP_VERSION=${php_ver}
 ENV
-    chown "${app_user}:${app_user}" "${home}/shared/.env"
-    chmod 640 "${home}/shared/.env"
-    success ".env with DB + webhook"
+        chown "${app_user}:${app_user}" "${home}/shared/.env"
+        chmod 640 "${home}/shared/.env"
+        success ".env with DB + webhook"
+    fi
 
     # 6. PHP-FPM pool
     step "PHP-FPM pool..."
@@ -129,13 +182,32 @@ ENV
 
     # 7. Nginx vhost
     step "Nginx vhost..."
-    _create_nginx_vhost "$app_user" "$domain" "$php_ver" ""
+    if [[ "$is_wp" == "true" ]]; then
+        _create_nginx_vhost "$app_user" "$domain" "$php_ver" "" "wordpress"
+    else
+        _create_nginx_vhost "$app_user" "$domain" "$php_ver" ""
+    fi
     ln -sf "/etc/nginx/sites-available/${app_user}" "/etc/nginx/sites-enabled/${app_user}"
     reload_nginx
     success "Nginx → ${domain}"
 
     # 8. Save config early (so app is registered even if later steps fail)
-    app_save "$app_user" "$(cat <<JSON
+    if [[ "$is_wp" == "true" ]]; then
+        app_save "$app_user" "$(cat <<JSON
+{
+    "user": "${app_user}",
+    "domain": "${domain}",
+    "aliases": [],
+    "repository": "${repository}",
+    "branch": "${branch}",
+    "php": "${php_ver}",
+    "wordpress": true,
+    "created_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+}
+JSON
+)"
+    else
+        app_save "$app_user" "$(cat <<JSON
 {
     "user": "${app_user}",
     "domain": "${domain}",
@@ -148,6 +220,7 @@ ENV
 }
 JSON
 )"
+    fi
     # Save git integration IDs (if provider was configured)
     if [[ -n "${GIT_PROVIDER:-}" ]]; then
         git_save_app_data "$app_user" "$GIT_PROVIDER" "${GIT_DEPLOY_KEY_ID:-}" "${GIT_WEBHOOK_ID:-}"
@@ -159,26 +232,43 @@ JSON
         "Cipi app created: ${app_user} on $(hostname)" \
         "A new app was created.\n\nServer: $(hostname)\nApp: ${app_user}\nDomain: ${domain}\nPHP: ${php_ver}\nBranch: ${branch}\nRepository: ${repository}\nTime: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 
-    # 9. Supervisor default worker
+    # 9. Supervisor default worker (Laravel only; WordPress has no queue worker)
     step "Queue worker..."
     echo "" > "/etc/supervisor/conf.d/${app_user}.conf"
-    _create_supervisor_worker "$app_user" "$php_ver" "default"
-    reload_supervisor
-    success "Worker (default queue)"
+    if [[ "$is_wp" != "true" ]]; then
+        _create_supervisor_worker "$app_user" "$php_ver" "default"
+        reload_supervisor
+        success "Worker (default queue)"
+    else
+        reload_supervisor
+        success "Skipped (WordPress)"
+    fi
 
     # 10. Crontab
     step "Crontab..."
-    cat <<CRON | crontab -u "$app_user" -
+    if [[ "$is_wp" == "true" ]]; then
+        cat <<CRON | crontab -u "$app_user" -
+# Cipi deploy trigger (manual: cipi deploy ${app_user})
+* * * * * test -f ${home}/.deploy-trigger && rm -f ${home}/.deploy-trigger && cd ${home} && /usr/bin/php${php_ver} /usr/local/bin/dep deploy -f ${home}/.deployer/deploy.php >> ${home}/logs/deploy.log 2>&1
+CRON
+        success "Deploy trigger only"
+    else
+        cat <<CRON | crontab -u "$app_user" -
 # Laravel Scheduler
 * * * * * /usr/bin/php${php_ver} ${home}/current/artisan schedule:run >> /dev/null 2>&1
 # Cipi deploy trigger (written by cipi/agent webhook)
 * * * * * test -f ${home}/.deploy-trigger && rm -f ${home}/.deploy-trigger && cd ${home} && /usr/bin/php${php_ver} /usr/local/bin/dep deploy -f ${home}/.deployer/deploy.php >> ${home}/logs/deploy.log 2>&1
 CRON
-    success "Scheduler + deploy trigger"
+        success "Scheduler + deploy trigger"
+    fi
 
     # 11. Deployer config
     step "Deployer..."
-    _create_deployer_config "$app_user" "$repository" "$branch" "$php_ver"
+    if [[ "$is_wp" == "true" ]]; then
+        _create_deployer_config_wordpress "$app_user" "$repository" "$branch" "$php_ver"
+    else
+        _create_deployer_config "$app_user" "$repository" "$branch" "$php_ver"
+    fi
     success "Deployer"
 
     # 12. Sudoers (worker restart only)
@@ -208,24 +298,37 @@ SUDO
     echo -e "  ${BOLD}MariaDB URL${NC}"
     echo -e "  ${CYAN}mariadb+ssh://${app_user}:${user_pass}@${server_ip}/${app_user}:${db_pass}@127.0.0.1/${app_user}${NC}"
     echo ""
-    if [[ -n "${GIT_PROVIDER:-}" && -n "${GIT_DEPLOY_KEY_ID:-}" && -n "${GIT_WEBHOOK_ID:-}" ]]; then
-        echo -e "  ${BOLD}Git${NC}         ${GREEN}${GIT_PROVIDER} auto-configured ✓${NC}"
-        echo -e "  ${BOLD}Webhook${NC}     ${CYAN}https://${domain}/cipi/webhook${NC}"
-    else
-        echo -e "  ${BOLD}Deploy Key${NC}  (add to your Git provider)"
-        echo -e "  ${CYAN}${deploy_key}${NC}"
-        echo ""
-        echo -e "  ${BOLD}Webhook${NC}     ${CYAN}https://${domain}/cipi/webhook${NC}"
-        echo -e "  ${BOLD}Token${NC}       ${CYAN}${webhook_token}${NC}"
-        if [[ -z "${GIT_PROVIDER:-}" ]]; then
-            echo ""
-            echo -e "  ${DIM}Tip: cipi git github-token <PAT> to auto-configure next time${NC}"
+    if [[ "$is_wp" == "true" ]]; then
+        if [[ -n "${GIT_PROVIDER:-}" && -n "${GIT_DEPLOY_KEY_ID:-}" ]]; then
+            echo -e "  ${BOLD}Git${NC}         ${GREEN}${GIT_PROVIDER} deploy key ✓${NC} (no webhook — WordPress)"
+        else
+            echo -e "  ${BOLD}Deploy Key${NC}  (add to your Git provider)"
+            echo -e "  ${CYAN}${deploy_key}${NC}"
+            [[ -z "${GIT_PROVIDER:-}" ]] && echo -e "  ${DIM}Tip: cipi git github-token <PAT> to auto-configure next time${NC}"
         fi
+        echo ""
+        echo -e "  ${BOLD}Next:${NC} cipi deploy ${app_user}"
+        echo -e "        cipi ssl install ${app_user}"
+    else
+        if [[ -n "${GIT_PROVIDER:-}" && -n "${GIT_DEPLOY_KEY_ID:-}" && -n "${GIT_WEBHOOK_ID:-}" ]]; then
+            echo -e "  ${BOLD}Git${NC}         ${GREEN}${GIT_PROVIDER} auto-configured ✓${NC}"
+            echo -e "  ${BOLD}Webhook${NC}     ${CYAN}https://${domain}/cipi/webhook${NC}"
+        else
+            echo -e "  ${BOLD}Deploy Key${NC}  (add to your Git provider)"
+            echo -e "  ${CYAN}${deploy_key}${NC}"
+            echo ""
+            echo -e "  ${BOLD}Webhook${NC}     ${CYAN}https://${domain}/cipi/webhook${NC}"
+            echo -e "  ${BOLD}Token${NC}       ${CYAN}${webhook_token}${NC}"
+            if [[ -z "${GIT_PROVIDER:-}" ]]; then
+                echo ""
+                echo -e "  ${DIM}Tip: cipi git github-token <PAT> to auto-configure next time${NC}"
+            fi
+        fi
+        echo ""
+        echo -e "  ${BOLD}Next:${NC} composer require cipi/agent  (in your Laravel project)"
+        echo -e "        cipi deploy ${app_user}"
+        echo -e "        cipi ssl install ${app_user}"
     fi
-    echo ""
-    echo -e "  ${BOLD}Next:${NC} composer require cipi/agent  (in your Laravel project)"
-    echo -e "        cipi deploy ${app_user}"
-    echo -e "        cipi ssl install ${app_user}"
     echo ""
     echo -e "  ${YELLOW}${BOLD}⚠ SAVE THESE CREDENTIALS — shown only once${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -261,8 +364,10 @@ app_show() {
     aliases=$(vault_read apps.json | jq -r --arg a "$app" '.[$a].aliases//[]|join(", ")')
     [[ -z "$aliases" ]] && aliases="none"
 
+    local is_wp; is_wp=$(app_get "$app" wordpress)
     echo -e "\n${BOLD}${app}${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    [[ "$is_wp" == "true" ]] && printf "  %-14s ${CYAN}%s${NC}\n" "Type" "WordPress"
     printf "  %-14s ${CYAN}%s${NC}\n" "Domain" "$d"
     printf "  %-14s ${CYAN}%s${NC}\n" "Aliases" "$aliases"
     printf "  %-14s ${CYAN}%s${NC}\n" "Repository" "$repo"
@@ -276,7 +381,10 @@ app_show() {
         printf "  %-14s ${GREEN}%s${NC} (key:%s hook:%s)\n" "Git" "$git_prov" "${git_dkid:-manual}" "${git_whid:-manual}"
     fi
 
-    echo -e "\n  ${BOLD}Webhook${NC}  ${CYAN}https://${d}/cipi/webhook${NC}"
+    local is_wp; is_wp=$(app_get "$app" wordpress)
+    if [[ "$is_wp" != "true" ]]; then
+        echo -e "\n  ${BOLD}Webhook${NC}  ${CYAN}https://${d}/cipi/webhook${NC}"
+    fi
 
     if [[ -f "/home/${app}/.ssh/id_ed25519.pub" ]]; then
         echo -e "\n  ${BOLD}Deploy Key${NC}\n  ${CYAN}$(cat "/home/${app}/.ssh/id_ed25519.pub")${NC}"
@@ -411,9 +519,16 @@ app_delete() {
 app_env() {
     local app="${1:-}"; [[ -z "$app" ]] && { error "Usage: cipi app env <app>"; exit 1; }
     app_exists "$app" || { error "Not found"; exit 1; }
-    ${EDITOR:-nano} "/home/${app}/shared/.env"
-    chown "${app}:${app}" "/home/${app}/shared/.env"; chmod 640 "/home/${app}/shared/.env"
-    success ".env updated"
+    local is_wp; is_wp=$(app_get "$app" wordpress)
+    if [[ "$is_wp" == "true" ]]; then
+        ${EDITOR:-nano} "/home/${app}/shared/wp-config.php"
+        chown "${app}:${app}" "/home/${app}/shared/wp-config.php"; chmod 640 "/home/${app}/shared/wp-config.php"
+        success "wp-config.php updated"
+    else
+        ${EDITOR:-nano} "/home/${app}/shared/.env"
+        chown "${app}:${app}" "/home/${app}/shared/.env"; chmod 640 "/home/${app}/shared/.env"
+        success ".env updated"
+    fi
 }
 
 app_logs() {
@@ -517,16 +632,51 @@ EOF
 
 _create_nginx_vhost() {
     local app="$1" domain="$2" v="$3"
-    local names aliases_raw
+    local names aliases_raw is_wp
     if [[ $# -ge 4 ]]; then
         aliases_raw="${4:-}"
     else
-        # Exclude primary domain from aliases to avoid duplicates
         aliases_raw=$(vault_read apps.json | jq -r --arg a "$app" --arg d "$domain" '.[$a].aliases // [] | map(select(. != $d)) | .[]' 2>/dev/null || true)
     fi
-    # Deduplicate: domain + aliases, preserving order, avoiding Nginx "conflicting server name" warnings
+    if [[ $# -ge 5 && -n "${5:-}" ]]; then
+        is_wp=true
+    else
+        is_wp=$(app_get "$app" wordpress)
+        [[ "$is_wp" == "true" ]] || is_wp=false
+    fi
     names=$(echo -e "${domain}\n${aliases_raw}" | grep -v '^[[:space:]]*$' | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')
-    cat > "/etc/nginx/sites-available/${app}" <<EOF
+    if [[ "$is_wp" == "true" ]]; then
+        cat > "/etc/nginx/sites-available/${app}" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${names};
+    root /home/${app}/current;
+    index index.php;
+    access_log /home/${app}/logs/nginx-access.log;
+    error_log /home/${app}/logs/nginx-error.log;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    client_max_body_size 256M;
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/${app}.sock;
+        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_hide_header X-Powered-By;
+        fastcgi_read_timeout 300;
+    }
+    location ~ /\.(?!well-known) { deny all; }
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+    error_page 404 /index.php;
+}
+EOF
+    else
+        cat > "/etc/nginx/sites-available/${app}" <<EOF
 server {
     listen 80;
     listen [::]:80;
@@ -555,6 +705,7 @@ server {
     error_page 404 /index.php;
 }
 EOF
+    fi
 }
 
 
@@ -605,6 +756,36 @@ task('workers:stop', function () {
 task('workers:restart', function () {
     run('sudo /usr/local/bin/cipi-worker restart ${an}');
 });
+PHP
+    chown -R "${an}:${an}" "${dh}/.deployer"
+}
+
+_create_deployer_config_wordpress() {
+    local an="$1" repo="$2" branch="$3" v="$4"
+    local dh="/home/${an}"
+    cat > "${dh}/.deployer/deploy.php" <<PHP
+<?php
+namespace Deployer;
+require 'recipe/wordpress.php';
+
+set('application', '${an}');
+set('repository', '${repo}');
+set('branch', '${branch}');
+set('deploy_path', '${dh}');
+set('keep_releases', 5);
+set('git_ssh_command', 'ssh -i ${dh}/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new');
+set('bin/php', '/usr/bin/php${v}');
+set('bin/composer', '/usr/bin/php${v} /usr/local/bin/composer');
+set('writable_mode', 'chmod');
+
+add('shared_files', ['wp-config.php']);
+add('shared_dirs', ['wp-content']);
+set('writable_dirs', ['wp-content', 'wp-content/uploads']);
+
+host('localhost')
+    ->set('remote_user', '${an}')
+    ->set('deploy_path', '${dh}')
+    ->set('ssh_arguments', ['-o StrictHostKeyChecking=accept-new', '-i ${dh}/.ssh/id_ed25519']);
 PHP
     chown -R "${an}:${an}" "${dh}/.deployer"
 }
@@ -719,15 +900,27 @@ ALTER USER '${app}'@'127.0.0.1' IDENTIFIED BY '${new_pass}';
 FLUSH PRIVILEGES;
 SQL
 
-    # Update .env if it exists
-    local env_file="/home/${app}/shared/.env"
-    if [[ -f "$env_file" ]]; then
-        sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${new_pass}|" "$env_file"
-        chown "${app}:${app}" "$env_file"
-        chmod 640 "$env_file"
-        info ".env updated with new DB password"
+    local is_wp; is_wp=$(app_get "$app" wordpress)
+    if [[ "$is_wp" == "true" ]]; then
+        local wp_config="/home/${app}/shared/wp-config.php"
+        if [[ -f "$wp_config" ]]; then
+            sed -i "s|define('DB_PASSWORD', '[^']*');|define('DB_PASSWORD', '${new_pass}');|" "$wp_config"
+            chown "${app}:${app}" "$wp_config"
+            chmod 640 "$wp_config"
+            info "wp-config.php updated with new DB password"
+        else
+            warn "Update DB_PASSWORD in wp-config.php manually!"
+        fi
     else
-        warn "Update DB_PASSWORD in your .env manually!"
+        local env_file="/home/${app}/shared/.env"
+        if [[ -f "$env_file" ]]; then
+            sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${new_pass}|" "$env_file"
+            chown "${app}:${app}" "$env_file"
+            chmod 640 "$env_file"
+            info ".env updated with new DB password"
+        else
+            warn "Update DB_PASSWORD in your .env manually!"
+        fi
     fi
 
     log_action "APP DB PASSWORD RESET: $app"

@@ -186,8 +186,9 @@ _gitlab_remove_webhook() {
 
 # Setup deploy key + webhook on the git provider.
 # Sets: GIT_DEPLOY_KEY_ID, GIT_WEBHOOK_ID, GIT_PROVIDER
+# Arg 6: "skip_webhook" — only add deploy key (e.g. for WordPress apps; no Laravel webhook).
 git_setup_repo() {
-    local app="$1" repository="$2" domain="$3" webhook_token="$4" pub_key="$5"
+    local app="$1" repository="$2" domain="$3" webhook_token="$4" pub_key="$5" skip_webhook="${6:-}"
     local provider; provider=$(_git_detect_provider "$repository")
 
     GIT_PROVIDER="" GIT_DEPLOY_KEY_ID="" GIT_WEBHOOK_ID=""
@@ -212,23 +213,29 @@ git_setup_repo() {
             warn "Could not add deploy key to GitHub — add it manually"
             GIT_DEPLOY_KEY_ID=""
         }
-        GIT_WEBHOOK_ID=$(_github_add_webhook "$owner_repo" "$webhook_url" "$webhook_token" 2>&1) || {
-            warn "Could not add webhook to GitHub — add it manually"
-            GIT_WEBHOOK_ID=""
-        }
+        if [[ "$skip_webhook" != "skip_webhook" && -n "$webhook_token" ]]; then
+            GIT_WEBHOOK_ID=$(_github_add_webhook "$owner_repo" "$webhook_url" "$webhook_token" 2>&1) || {
+                warn "Could not add webhook to GitHub — add it manually"
+                GIT_WEBHOOK_ID=""
+            }
+        fi
     elif [[ "$provider" == "gitlab" ]]; then
         local project_id; project_id=$(_git_parse_gitlab_project "$repository")
         GIT_DEPLOY_KEY_ID=$(_gitlab_add_deploy_key "$project_id" "cipi:${app}" "$pub_key" 2>&1) || {
             warn "Could not add deploy key to GitLab — add it manually"
             GIT_DEPLOY_KEY_ID=""
         }
-        GIT_WEBHOOK_ID=$(_gitlab_add_webhook "$project_id" "$webhook_url" "$webhook_token" 2>&1) || {
-            warn "Could not add webhook to GitLab — add it manually"
-            GIT_WEBHOOK_ID=""
-        }
+        if [[ "$skip_webhook" != "skip_webhook" && -n "$webhook_token" ]]; then
+            GIT_WEBHOOK_ID=$(_gitlab_add_webhook "$project_id" "$webhook_url" "$webhook_token" 2>&1) || {
+                warn "Could not add webhook to GitLab — add it manually"
+                GIT_WEBHOOK_ID=""
+            }
+        fi
     fi
 
-    if [[ -n "$GIT_DEPLOY_KEY_ID" && -n "$GIT_WEBHOOK_ID" ]]; then
+    if [[ "$skip_webhook" == "skip_webhook" ]]; then
+        [[ -n "$GIT_DEPLOY_KEY_ID" ]] && success "${provider} deploy key configured (webhook skipped)"
+    elif [[ -n "$GIT_DEPLOY_KEY_ID" && -n "$GIT_WEBHOOK_ID" ]]; then
         success "${provider} deploy key + webhook configured automatically"
     elif [[ -n "$GIT_DEPLOY_KEY_ID" ]]; then
         success "${provider} deploy key added (webhook needs manual setup)"
