@@ -64,7 +64,7 @@ That's it. Your Laravel app is live.
 
 ## Stack
 
-Every app gets a fully isolated environment. **Laravel** (default): zero-downtime deploy, DB, workers, cron, webhook. **`--custom`**: classic deploy into `htdocs`, configurable docroot and Nginx (try_files: index.php / index.html / 404.html; entry: index.php or index.html), no DB, no .env, no cron, no workers.
+Every app gets a fully isolated environment. **Laravel** (default): zero-downtime deploy, DB, workers, cron, webhook. **`--custom`**: classic deploy into `htdocs`, configurable docroot only; Nginx uses `index index.html index.php`, `try_files $uri $uri/ /index.php?$args`, `error_page 404 /404.html`. No DB, no .env, no cron, no workers.
 
 | Component          | Details                                                                             |
 | ------------------ | ----------------------------------------------------------------------------------- |
@@ -95,7 +95,7 @@ Native GitHub and GitLab integration — deploy keys and webhooks configured aut
 
 ### 📦 App Types
 
-**Laravel** (default) — zero-downtime deploy with releases, shared storage, workers, scheduler, webhook. **`--custom`** — for simple sites: classic deploy into `htdocs` (no current/shared), choose docroot (e.g. `/`, `www`, `dist`), Nginx try_files (index.php, index.html, or 404.html), and entry point (index.php or index.html). No DB, no .env, no cron, no workers, no webhook — just Nginx, PHP-FPM, and deploy key.
+**Laravel** (default) — zero-downtime deploy with releases, shared storage, workers, scheduler, webhook. **`--custom`** — for simple sites (e.g. WordPress, static+PHP): classic deploy into `htdocs` (no current/shared), choose docroot only (e.g. `/`, `www`, `dist`). Nginx: `index index.html index.php`, `try_files $uri $uri/ /index.php?$args`, `error_page 404 /404.html`. No DB, no .env, no cron, no workers, no webhook — just Nginx, PHP-FPM, and deploy key.
 
 ### 🌐 Aliases & SSL
 

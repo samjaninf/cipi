@@ -8,12 +8,12 @@ All notable changes to Cipi are documented in this file.
 
 ### Added
 
-- **`cipi app create --custom`** — Creates a custom app with classic deploy (no zero-downtime): code is deployed into `htdocs` (no `current`/`shared` symlinks). During creation you choose: document root (default `/`, or e.g. `www`, `dist`, `public`), Nginx `try_files` fallback (`index.php`, `index.html`, or `404.html`), and entry point (`index.php` or `index.html`). Custom apps have no database, no `.env`, no cron, no queue workers, no webhook; post-creation summary shows only SSH, deploy key, and next steps (no DB credentials, no webhook).
+- **`cipi app create --custom`** — Creates a custom app with classic deploy (no zero-downtime): code is deployed into `htdocs` (no `current`/`shared` symlinks). During creation you only choose document root (default `/`, or e.g. `www`, `dist`, `public`). Nginx is fixed: `index index.html index.php`, `try_files $uri $uri/ /index.php?$args`, `error_page 404 /404.html` (no prompts for try_files or entry point). Custom apps have no database, no `.env`, no cron, no queue workers, no webhook; post-creation summary shows only SSH, deploy key, and next steps.
 
 ### Changed
 
 - **App types** — `cipi app create` now supports only **Laravel** (default) and **`--custom`**.
-- **`cipi app show`** — Displays type "Custom" and docroot / try_files / entry_point when applicable; Webhook line is shown only for Laravel apps.
+- **`cipi app show`** — Displays type "Custom" and docroot when applicable; Webhook line is shown only for Laravel apps.
 - **`cipi app env`** — Exits with an error for custom apps (no .env).
 - **`cipi app reset-db-password`** — Exits with an error for custom apps (no database).
 - **`cipi app delete`** — Skips database drop for custom apps (none was created).
