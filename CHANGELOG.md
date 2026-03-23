@@ -11,6 +11,10 @@ All notable changes to Cipi are documented in this file.
 - **PHP Redis extension (phpredis)** — The installer and `cipi php install <ver>` now include the `redis` package (`php*-redis`), so the phpredis extension is available for Laravel and other apps using the native Redis client
 - **Migration 4.4.5** — On `cipi self-update`, existing servers automatically install `php*-redis` for every PHP version already present (7.4–8.5 with FPM), then reload PHP-FPM
 
+### Changed
+
+- **Post-install summary** — The final screen after `setup.sh` no longer prints the **Stack** block (Nginx, MariaDB, Redis, PHP, Node.js, Composer, Deployer versions); it goes from **Server** (IP, OS) straight to credentials and next steps
+
 ---
 
 ## [4.4.4] — 2026-03-20
