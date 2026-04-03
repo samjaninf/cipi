@@ -111,6 +111,7 @@ show_help() {
     echo -e "    ${CYAN}cipi api upgrade${NC}                  Full rebuild (fresh Laravel + package)"
     echo -e "    ${CYAN}cipi api status${NC}                   Show API versions and status"
     echo -e "    ${CYAN}cipi api token list|create|revoke${NC} API token management"
+    echo -e "    ${CYAN}cipi api fix-permissions${NC}            Fix panel API file ownership (SQLite/logs)"
     echo ""
     echo -e "  ${BOLD}${CYAN}GIT INTEGRATION${NC}"
     echo -e "    ${CYAN}cipi git status${NC}                      Git provider status"

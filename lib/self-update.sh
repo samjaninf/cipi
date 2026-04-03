@@ -49,9 +49,10 @@ selfupdate_command() {
         local api_root="${CIPI_API_ROOT:-/opt/cipi/api}"
         (cd "$api_root" && composer config repositories.cipi-api path /opt/cipi/cipi-api 2>/dev/null) || true
         (cd "$api_root" && composer update cipi/api --no-interaction 2>/dev/null) || true
-        (cd "$api_root" && php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
-        (cd "$api_root" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
+        # Composer runs as root; reclaim ownership before migrate (SQLite/logs must be www-data-writable).
         chown -R www-data:www-data "$api_root"
+        (cd "$api_root" && sudo -u www-data php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
+        (cd "$api_root" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
         systemctl restart cipi-queue 2>/dev/null || true
         success "cipi-api package updated in Laravel app"
     fi

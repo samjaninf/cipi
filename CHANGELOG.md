@@ -4,6 +4,18 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.4.16] — 2026-04-03
+
+### Fixed
+
+- **Panel API readonly SQLite / log permission errors** — Root-run `composer` (e.g. during `cipi self-update`) could leave `database.sqlite` or `storage/logs` owned by root before `migrate`, causing *attempt to write a readonly database* and Monolog *Permission denied* on `laravel.log`. Added **`ensure_cipi_api_permissions`** in `common.sh` (chown `storage`, `database`, `bootstrap/cache` → `www-data`), invoked before API token commands, `api status`, `api update`, and after API install; **`cipi self-update`** now runs full `chown` immediately after `composer update` and runs `vendor:publish` as `www-data`. New command **`cipi api fix-permissions`** for manual repair. **Migration 4.4.16** applies the fix on existing servers.
+
+### Changed
+
+- **`cipi api token create` abilities** — The interactive ability list now matches the [Cipi API docs](https://cipi.sh/docs/advanced#cipi-api): added **`deploy-manage`**, **`dbs-view`**, **`dbs-create`**, **`dbs-delete`**, **`dbs-manage`**, and **`apps-view`**. The whiptail fullscreen checklist is replaced by a **plain-terminal** checklist (numbered rows, ✓/· markers, toggle by number, `a`/`n`/`Enter`).
+
+---
+
 ## [4.4.15] — 2026-04-03
 
 ### Changed

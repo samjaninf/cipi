@@ -154,6 +154,16 @@ ensure_apps_json_api_access() {
     _update_apps_public
 }
 
+# Panel API (/opt/cipi/api): SQLite, Laravel logs, and bootstrap cache must be
+# writable by www-data (PHP-FPM, queue worker, artisan via sudo -u www-data).
+# Call after root-run composer or manual edits under /opt/cipi/api.
+ensure_cipi_api_permissions() {
+    local root="${CIPI_API_ROOT:-/opt/cipi/api}"
+    [[ -f "${root}/artisan" ]] || return 0
+    mkdir -p "${root}/storage/logs" "${root}/database" "${root}/bootstrap/cache" 2>/dev/null || true
+    chown -R www-data:www-data "${root}/storage" "${root}/database" "${root}/bootstrap/cache" 2>/dev/null || true
+}
+
 app_set() {
     vault_read apps.json | jq --arg a "$1" --arg k "$2" --arg v "$3" '.[$a][$k] = $v' | vault_write apps.json
     ensure_apps_json_api_access

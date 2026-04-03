@@ -6,8 +6,102 @@
 readonly CIPI_API_ROOT="/opt/cipi/api"
 readonly CIPI_API_CONFIG="${CIPI_CONFIG}/api.json"
 
-# All Sanctum abilities for Cipi API
-CIPI_ABILITIES="apps-view apps-create apps-edit apps-delete ssl-manage aliases-view aliases-create aliases-delete mcp-access"
+# ability|description — keep aligned with https://cipi.sh/docs/advanced#cipi-api
+_api_ability_lines() {
+    cat <<'EOF'
+apps-view|Read apps
+apps-create|Create apps
+apps-edit|Edit apps
+apps-delete|Delete apps
+deploy-manage|Deploy, rollback, unlock
+ssl-manage|SSL certificates
+aliases-view|Read aliases
+aliases-create|Add aliases
+aliases-delete|Remove aliases
+dbs-view|List databases
+dbs-create|Create databases
+dbs-delete|Delete databases
+dbs-manage|Backup, restore, DB password
+mcp-access|MCP server
+EOF
+}
+
+_api_token_abilities_default() {
+    _api_ability_lines | cut -d'|' -f1 | paste -sd, -
+}
+
+# Terminal checklist (no whiptail): toggle numbers, Enter to confirm. Default: all on.
+_api_token_select_abilities() {
+    local -a keys descs
+    local k d
+    while IFS='|' read -r k d; do
+        [[ -z "$k" ]] && continue
+        keys+=("$k")
+        descs+=("$d")
+    done < <(_api_ability_lines)
+
+    local n=${#keys[@]}
+    local -a sel=()
+    local i
+    for ((i = 0; i < n; i++)); do
+        sel[i]=1
+    done
+
+    while true; do
+        echo ""
+        echo -e "${BOLD}Token abilities${NC}  ${DIM}· toggle number(s) · ${BOLD}a${DIM}=all · ${BOLD}n${DIM}=none · ${BOLD}Enter${DIM}=confirm${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        for ((i = 0; i < n; i++)); do
+            local mark
+            if [[ ${sel[i]} -eq 1 ]]; then
+                mark="${GREEN}✓${NC}"
+            else
+                mark="${DIM}·${NC}"
+            fi
+            printf "  %b  %2d  ${CYAN}%-18s${NC} %s\n" "$mark" "$((i + 1))" "${keys[i]}" "${descs[i]}"
+        done
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        printf "${CYAN}›${NC} "
+        local choice=""
+        read -r choice || true
+        choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [[ -z "$choice" ]] && break
+        case "$choice" in
+            a | all)
+                for ((i = 0; i < n; i++)); do
+                    sel[i]=1
+                done
+                ;;
+            n | none)
+                for ((i = 0; i < n; i++)); do
+                    sel[i]=0
+                done
+                ;;
+            *)
+                local tok
+                for tok in $choice; do
+                    tok=${tok//,/}
+                    [[ "$tok" =~ ^[0-9]+$ ]] || continue
+                    local idx=$((tok - 1))
+                    if ((idx >= 0 && idx < n)); then
+                        sel[idx]=$((1 - sel[idx]))
+                    fi
+                done
+                ;;
+        esac
+    done
+
+    local out=()
+    for ((i = 0; i < n; i++)); do
+        [[ ${sel[i]} -eq 1 ]] && out+=("${keys[i]}")
+    done
+    if ((${#out[@]} == 0)); then
+        error "Select at least one ability."
+        return 1
+    fi
+    local IFS=,
+    echo "${out[*]}"
+}
 
 # ── API SETUP (cipi api [domain]) ──────────────────────────────
 
@@ -29,6 +123,8 @@ api_setup() {
 
     # Ensure Laravel API app exists
     _api_ensure_laravel_app
+
+    ensure_cipi_api_permissions
 
     # Allow www-data (PHP-FPM) to read apps.json for API endpoints
     step "Configuring apps.json access for API..."
@@ -246,6 +342,8 @@ api_update() {
 
     echo ""; info "Updating API (composer update)..."; echo ""
 
+    ensure_cipi_api_permissions
+
     # Stop queue worker during update
     systemctl stop cipi-queue 2>/dev/null || true
 
@@ -392,7 +490,7 @@ api_status() {
     [[ ! -f "${CIPI_API_CONFIG}" ]] && { error "API not configured. Run: cipi api <domain>"; exit 1; }
     [[ ! -f "${CIPI_API_ROOT}/artisan" ]] && { error "Laravel API app not found."; exit 1; }
 
-    chown -R www-data:www-data "${CIPI_API_ROOT}/storage" "${CIPI_API_ROOT}/database" "${CIPI_API_ROOT}/bootstrap/cache" 2>/dev/null || true
+    ensure_cipi_api_permissions
 
     local domain; domain=$(vault_read api.json | jq -r '.domain' 2>/dev/null)
 
@@ -460,6 +558,8 @@ api_token_list() {
     [[ ! -f "${CIPI_API_CONFIG}" ]] && { error "API not configured. Run: cipi api <domain>"; exit 1; }
     [[ ! -f "${CIPI_API_ROOT}/artisan" ]] && { error "Laravel API app not found."; exit 1; }
 
+    ensure_cipi_api_permissions
+
     echo -e "\n${BOLD}API Tokens${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     sudo -u www-data php "${CIPI_API_ROOT}/artisan" cipi:token-list 2>/dev/null || {
@@ -486,22 +586,13 @@ api_token_create() {
         error "Invalid slug. Use lowercase letters, numbers, hyphens only."
     done
 
-    # Abilities (multiselect with all pre-selected)
+    # Abilities (terminal checklist; non-TTY / pipes → all abilities)
     local abilities_str
-    if command -v whiptail &>/dev/null; then
-        local items=()
-        for a in $CIPI_ABILITIES; do
-            items+=("$a" "$a" "ON")
-        done
-        abilities_str=$(whiptail --title "Permissions" --checklist "Select abilities (Space=toggle, Enter=confirm):" 18 60 8 "${items[@]}" 3>&1 1>&2 2>&3 | tr -d '"' | tr ' ' ',')
+    if [[ -t 0 ]]; then
+        abilities_str=$(_api_token_select_abilities) || exit 1
     else
-        # Fallback: simple prompt, all selected
-        echo -e "${CYAN}Permissions (comma-separated, or Enter for all):${NC}"
-        echo "  $CIPI_ABILITIES"
-        read -r abilities_str
-        [[ -z "$abilities_str" ]] && abilities_str=$(echo $CIPI_ABILITIES | tr ' ' ',')
+        abilities_str=$(_api_token_abilities_default)
     fi
-    [[ -z "$abilities_str" ]] && abilities_str=$(echo $CIPI_ABILITIES | tr ' ' ',')
 
     # Expiry date (YYYY-MM-DD, empty = no expiry)
     local expiry=""
@@ -511,6 +602,8 @@ api_token_create() {
             error "Invalid date format. Use YYYY-MM-DD"; exit 1
         fi
     fi
+
+    ensure_cipi_api_permissions
 
     echo ""
     step "Creating token..."
@@ -533,6 +626,8 @@ api_token_revoke() {
     [[ -z "$name" ]] && { error "Usage: cipi api token revoke <name>"; exit 1; }
     [[ ! -f "${CIPI_API_ROOT}/artisan" ]] && { error "Laravel API app not found."; exit 1; }
 
+    ensure_cipi_api_permissions
+
     local out rc
     out=$(cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan cipi:token-revoke --name="$name" 2>&1) && rc=0 || rc=$?
     if [[ $rc -eq 0 ]]; then
@@ -544,6 +639,12 @@ api_token_revoke() {
 
 # ── ROUTER ─────────────────────────────────────────────────────
 
+api_fix_permissions() {
+    [[ ! -f "${CIPI_API_ROOT}/artisan" ]] && { error "Laravel API app not found at ${CIPI_API_ROOT}"; exit 1; }
+    ensure_cipi_api_permissions
+    success "Panel API writable paths (${CIPI_API_ROOT}/storage, database, bootstrap/cache) → www-data"
+}
+
 api_command() {
     local sub="${1:-}"; shift || true
     case "$sub" in
@@ -552,12 +653,13 @@ api_command() {
         update)  api_update ;;
         upgrade) api_upgrade ;;
         status)  api_status ;;
+        fix-permissions|fixperms) api_fix_permissions ;;
         token)   _api_token_command "$@" ;;
         *)
             if validate_domain "$sub" 2>/dev/null; then
                 api_setup "$sub"
             else
-                error "Unknown: $sub"; echo "Use: <domain> | ssl | update | upgrade | status | token list|create|revoke"; exit 1
+                error "Unknown: $sub"; echo "Use: <domain> | ssl | update | upgrade | status | fix-permissions | token list|create|revoke"; exit 1
             fi ;;
     esac
 }
