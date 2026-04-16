@@ -597,7 +597,10 @@ app_delete() {
     step "Crontab...";     crontab -u "$app" -r 2>/dev/null||true
     step "Sudoers...";     rm -f "/etc/sudoers.d/cipi-${app}"
     step "SSL...";         certbot delete --cert-name "$d" --non-interactive 2>/dev/null||true
-    step "User & files..."; userdel -r "$app" 2>/dev/null||true
+    step "User & files..."
+    gpasswd -d www-data "$app" 2>/dev/null||true
+    userdel -r "$app" 2>/dev/null||true
+    groupdel "$app" 2>/dev/null||true
     step "Config...";      app_remove "$app"
 
     log_action "APP DELETED: $app"

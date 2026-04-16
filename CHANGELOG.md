@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.4.19] — 2026-04-16
+
+### Fixed
+
+- **`cipi app delete` — leftover Linux group blocking recreate** — On app create, `useradd` creates a private primary group named like the user and `usermod -aG "$app" www-data` adds `www-data` to that group. `userdel -r` removes the user and home directory but **does not always** remove the matching group from `/etc/group`. Recreating the same app then failed with `useradd: group <app> exists`. `app_delete` now runs `gpasswd -d www-data "$app"` (drop `www-data` from the group), then `userdel -r`, then `groupdel "$app"`. On servers already in a bad state, clean up manually with `gpasswd -d www-data <app> 2>/dev/null; groupdel <app> 2>/dev/null` before `cipi app create`.
+
+---
+
 ## [4.4.18] — 2026-04-06
 
 ### Fixed
