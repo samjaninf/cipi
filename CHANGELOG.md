@@ -4,6 +4,32 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.5.1] — 2026-05-21
+
+### Fixed
+
+- **Panel API: recurring 500s on `/` and `/api/*` while user apps stayed up** — 4.5.0 fixed the *acute* FPM saturation symptom, but the *chronic* cause was untouched: the `cipi-api` Laravel package (v1.7.0+) registers scheduled commands (`cipi:prune-job-logs` daily @ 03:30, `cipi:record-server-metrics` every minute) and the cipi installer **never wired up `* * * * * php artisan schedule:run` for `/opt/cipi/api`** — user apps had it via their per-user crontab; the panel did not. Over weeks of operation this produced:
+  - `storage/app/cipi-job-logs/{uuid}.log` accumulating forever (one file per deploy / artisan / MCP / `sudo cipi db …` call invoked via the API), eventually exhausting disk space or inodes → `fopen()` failures surfaced as opaque 500s on the panel while per-app vhosts (separate pool, separate writes) kept serving.
+  - `cipi_jobs` and `failed_jobs` rows accumulating forever in the panel SQLite, slowing every authenticated request and bloating WAL.
+  - `database.sqlite-wal` growing unbounded — `PASSIVE` auto-checkpoints don't reclaim space under concurrent FPM + queue writers.
+  - Laravel session files piling up under the default `file` driver. The welcome route's `web` middleware writes one file per anonymous hit (bots, uptime monitors); GC is probabilistic (2/100) so low-traffic panels effectively never GC. Once the sessions dir grew large enough, `scandir()` stalled FPM workers past `request_terminate_timeout`.
+
+  Fixed by wiring the Laravel scheduler into system cron for the panel app, adding a daily maintenance job for the SQLite cleanups, and switching the panel to the `array` session driver so the welcome page no longer writes to disk per request.
+
+### Added
+
+- **`/etc/cron.d/cipi-api`** — installed by `_api_setup_cron` (in `lib/api.sh`) and by migration 4.5.1 on existing servers. Two entries: `* * * * *` runs `php /opt/cipi/api/artisan schedule:run` as `www-data` (drives the cipi-api package's scheduled commands); `15 4 * * *` runs `/usr/local/bin/cipi-api-maintain` daily for the SQLite cleanups.
+- **`/usr/local/bin/cipi-api-maintain`** — daily maintenance helper. Runs `php artisan queue:prune-failed --hours=336`, deletes `cipi_jobs` rows older than 14 days that are `completed` or `failed` (running/pending are preserved), and runs `PRAGMA wal_checkpoint(TRUNCATE)` to reclaim WAL space.
+- **`lib/migrations/4.5.1.sh`** — retrofits installed servers: lays down the two cron files, sets `SESSION_DRIVER=array` in `.env`, prunes accumulated `cipi-job-logs/*.log` older than 14 days, runs an immediate `cipi_jobs` + `queue:prune-failed` + WAL truncate so operators see the benefit without waiting for 04:15, and reloads `cron`. Idempotent.
+- **Logrotate for the maintenance log** — `/etc/logrotate.d/cipi-api-maintain` keeps `/var/log/cipi-api-maintain.log` bounded (weekly, 8 rotations, `copytruncate`).
+
+### Changed
+
+- **`SESSION_DRIVER=array`** is now forced in `/opt/cipi/api/.env` on install/update/upgrade/migration (the panel is token-only; persistent sessions only added disk thrash).
+- **`api_setup` / `api_update` / `api_upgrade`** all call `_api_setup_cron` and `_api_ensure_session_driver_env` now, so any path through the API installer leaves the cron + env in the correct state.
+
+---
+
 ## [4.5.0] — 2026-05-04
 
 ### Fixed

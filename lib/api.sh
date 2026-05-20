@@ -242,6 +242,7 @@ api_setup() {
             || echo "CIPI_APPS_JSON=${CIPI_CONFIG}/apps-public.json" >> "${CIPI_API_ROOT}/.env"
     fi
     _api_ensure_log_stack_env
+    _api_ensure_session_driver_env
     _api_apply_sqlite_pragmas
 
     # PHP-FPM pool for API
@@ -257,10 +258,13 @@ api_setup() {
     reload_nginx
     success "Nginx → ${domain}"
 
-    # Queue worker (systemd)
+    # Queue worker (systemd) + scheduler & maintenance crons
     step "Queue worker..."
     _api_setup_queue_worker
     success "Queue worker (cipi-queue)"
+    step "Scheduler & maintenance cron..."
+    _api_setup_cron
+    success "Cron (schedule:run + daily maintenance)"
 
     log_action "API CONFIGURED: $domain"
     echo ""
@@ -313,6 +317,11 @@ _api_ensure_laravel_app() {
             sed -i 's|^LOG_STACK=.*|LOG_STACK=single,stderr|' /tmp/cipi-api-build/.env
         else
             echo 'LOG_STACK=single,stderr' >> /tmp/cipi-api-build/.env
+        fi
+        if grep -q '^SESSION_DRIVER=' /tmp/cipi-api-build/.env 2>/dev/null; then
+            sed -i 's|^SESSION_DRIVER=.*|SESSION_DRIVER=array|' /tmp/cipi-api-build/.env
+        else
+            echo 'SESSION_DRIVER=array' >> /tmp/cipi-api-build/.env
         fi
         grep -q '^CIPI_APPS_JSON=' /tmp/cipi-api-build/.env 2>/dev/null \
             && sed -i "s|^CIPI_APPS_JSON=.*|CIPI_APPS_JSON=${CIPI_CONFIG}/apps-public.json|" /tmp/cipi-api-build/.env \
@@ -389,6 +398,115 @@ SYSTEMD
     systemctl daemon-reload
     systemctl enable cipi-queue 2>/dev/null
     systemctl restart cipi-queue 2>/dev/null
+}
+
+# Wire the Laravel scheduler for /opt/cipi/api into system cron and lay down
+# a daily maintenance cron. Without this, the cipi-api package's scheduled
+# commands (cipi:prune-job-logs daily, cipi:record-server-metrics every
+# minute) never fire on the panel app — only on user apps, which have their
+# own per-user crontab. Consequences pre-4.5.1:
+#  - storage/app/cipi-job-logs/{uuid}.log accumulates forever (one file per
+#    deploy / artisan / MCP / sudo cipi call), eventually filling disk →
+#    fopen() failures surface as opaque 500s on the panel
+#  - cipi_jobs / failed_jobs rows accumulate forever in the panel SQLite
+#  - WAL never gets a TRUNCATE checkpoint so database.sqlite-wal stays huge
+# Idempotent: full file rewrite each time; no per-line dedup needed.
+_api_setup_cron() {
+    cat > /etc/cron.d/cipi-api <<CRON
+# === CIPI API CRON ===
+# Managed by 'cipi api'. Do not edit by hand — rewritten on each setup/update/upgrade.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Laravel scheduler — drives the cipi-api package's scheduled commands
+# (cipi:prune-job-logs daily @ 03:30, cipi:record-server-metrics every minute).
+# Goes to /dev/null because per-command output already lands in laravel.log.
+* * * * * www-data /usr/bin/php ${CIPI_API_ROOT}/artisan schedule:run >> /dev/null 2>&1
+
+# Daily maintenance @ 04:15 — keeps the panel SQLite small and snappy:
+#  - prune Laravel failed_jobs older than 14 days
+#  - prune cipi_jobs (completed/failed) older than 14 days
+#  - WAL checkpoint(TRUNCATE) so database.sqlite-wal doesn't grow unbounded
+15 4 * * * www-data /usr/local/bin/cipi-api-maintain >> /var/log/cipi-api-maintain.log 2>&1
+CRON
+    chmod 644 /etc/cron.d/cipi-api
+
+    # Maintenance helper kept out of the crontab itself so we can extend it
+    # later without re-touching cron.d. Runs as www-data via cron.d above.
+    cat > /usr/local/bin/cipi-api-maintain <<'MAINTAIN'
+#!/bin/bash
+# Cipi API daily maintenance — see /etc/cron.d/cipi-api.
+set -u
+API_ROOT="/opt/cipi/api"
+DB_FILE=""
+if [[ -f "${API_ROOT}/.env" ]] && grep -q '^DB_CONNECTION=sqlite' "${API_ROOT}/.env" 2>/dev/null; then
+    raw=$(grep '^DB_DATABASE=' "${API_ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]"\r')
+    [[ -z "$raw" || "$raw" == "null" ]] && raw="database/database.sqlite"
+    if [[ "$raw" =~ ^/ ]]; then
+        DB_FILE="$raw"
+    else
+        DB_FILE="${API_ROOT}/${raw}"
+    fi
+fi
+
+echo "[$(date '+%F %T')] cipi-api-maintain start"
+
+# Prune failed_jobs older than 14 days (built-in Laravel command).
+if [[ -f "${API_ROOT}/artisan" ]]; then
+    (cd "${API_ROOT}" && /usr/bin/php artisan queue:prune-failed --hours=336 2>&1) || true
+fi
+
+# Prune cipi_jobs older than 14 days (completed/failed only — never running/pending).
+# Direct sqlite3 keeps this independent of the cipi-api package version.
+if [[ -n "$DB_FILE" && -f "$DB_FILE" ]] && command -v sqlite3 >/dev/null 2>&1; then
+    deleted=$(/usr/bin/sqlite3 "$DB_FILE" \
+        "DELETE FROM cipi_jobs WHERE status IN ('completed','failed') AND created_at < datetime('now','-14 days'); SELECT changes();" 2>/dev/null)
+    echo "  cipi_jobs pruned: ${deleted:-0}"
+    # WAL checkpoint — reclaims space from database.sqlite-wal that 'PASSIVE'
+    # checkpoints don't reclaim under concurrent FPM+queue writers.
+    /usr/bin/sqlite3 "$DB_FILE" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
+    echo "  WAL checkpoint: ok"
+fi
+
+echo "[$(date '+%F %T')] cipi-api-maintain done"
+MAINTAIN
+    chmod 755 /usr/local/bin/cipi-api-maintain
+    chown root:root /usr/local/bin/cipi-api-maintain
+
+    # Logrotate for the maintenance log (don't grow forever).
+    if [[ -d /etc/logrotate.d ]]; then
+        cat > /etc/logrotate.d/cipi-api-maintain <<'LR'
+/var/log/cipi-api-maintain.log {
+    weekly
+    missingok
+    rotate 8
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+}
+LR
+    fi
+}
+
+# The panel is token-only (Sanctum). The 'web' middleware group on Laravel's
+# default welcome route still runs StartSession, which writes one file per
+# anonymous hit under the 'file' driver — bots and uptime checks accumulate
+# thousands over weeks until scandir() on the sessions dir stalls FPM
+# workers past request_terminate_timeout, surfacing as 500s on '/'. Switching
+# to the 'array' driver keeps sessions in-memory for the lifetime of the
+# request and writes nothing to disk; CSRF for any future form would need to
+# be revisited, but there are no stateful forms in the panel.
+_api_ensure_session_driver_env() {
+    local envf="${CIPI_API_ROOT}/.env"
+    [[ -f "$envf" ]] || return 0
+    if grep -q '^SESSION_DRIVER=' "$envf" 2>/dev/null; then
+        sed -i 's|^SESSION_DRIVER=.*|SESSION_DRIVER=array|' "$envf"
+    else
+        echo 'SESSION_DRIVER=array' >> "$envf"
+    fi
+    chown www-data:www-data "$envf" 2>/dev/null || true
+    chmod 640 "$envf" 2>/dev/null || true
 }
 
 _api_create_fpm_pool() {
@@ -525,7 +643,9 @@ api_update() {
     (cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan vendor:publish --tag=cipi-assets --force 2>/dev/null) || true
     (cd "${CIPI_API_ROOT}" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
     _api_ensure_log_stack_env
+    _api_ensure_session_driver_env
     _api_apply_sqlite_pragmas
+    _api_setup_cron
     success "Assets published, migrations applied"
 
     # Restart services
@@ -626,7 +746,9 @@ api_upgrade() {
     mv /tmp/cipi-api-build "${CIPI_API_ROOT}"
     chown -R www-data:www-data "${CIPI_API_ROOT}"
     _api_ensure_log_stack_env
+    _api_ensure_session_driver_env
     _api_apply_sqlite_pragmas
+    _api_setup_cron
     success "App replaced"
 
     # 8. Restart services
