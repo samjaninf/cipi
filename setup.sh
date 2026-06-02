@@ -580,7 +580,7 @@ CNFEOF
 install_valkey() {
     step_msg "Installing Valkey..."
 
-    apt-get install -y -qq valkey valkey-tools
+    apt-get install -y -qq valkey-server valkey-tools
 
     # Generate password
     local VALKEY_PASS
