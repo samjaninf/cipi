@@ -49,6 +49,16 @@ selfupdate_command() {
     [[ -d "${tmp}/cipi-api" ]] && rm -rf /opt/cipi/cipi-api && cp -a "${tmp}/cipi-api" /opt/cipi/cipi-api
     chown -R root:root /usr/local/bin/cipi /opt/cipi
 
+    # The blanket `chown -R root:root /opt/cipi` above also re-roots the panel
+    # Laravel app under /opt/cipi/api: storage/, database/ and bootstrap/cache/
+    # become root:root, so PHP-FPM (www-data) can no longer open
+    # storage/logs/laravel.log or write the SQLite DB → the panel returns HTTP
+    # 500 after EVERY self-update (including the nightly cron). The cipi-api
+    # block below only reclaims them when /opt/cipi/cipi-api exists, so on
+    # package-from-packagist installs it was skipped and the panel stayed
+    # broken. Reclaim the writable paths unconditionally, right here.
+    ensure_cipi_api_permissions
+
     # Run migrations
     if [[ -d "${tmp}/lib/migrations" ]]; then
         for m in $(ls "${tmp}/lib/migrations/"*.sh 2>/dev/null|sort -V); do

@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.5.3] — 2026-06-02
+
+### Fixed
+
+- **Panel API HTTP 500 after every self-update (the *real* root cause)** — `lib/self-update.sh` runs `chown -R root:root /opt/cipi` on each update (including the nightly 03:50 cron), which also re-roots the Laravel panel app under `/opt/cipi/api`. With `storage/`, `database/` and `bootstrap/cache/` owned `root:root`, PHP-FPM (`www-data`) can no longer open `storage/logs/laravel.log` or write the SQLite DB — Laravel then fatals *while trying to log the error* (`UnexpectedValueException: ... laravel.log ... Permission denied`), so the browser only sees a bare `HTTP ERROR 500`. The compensating `www-data` re-chown lived **inside** the `cipi-api` package block, which is skipped when `/opt/cipi/cipi-api` is absent (package installed from Packagist) — so the panel stayed broken after each update. This is what the 4.5.0/4.5.1 work (FPM pool, sessions, job/metrics pruning) never addressed, because those targeted *symptoms*, not the ownership reset. Fix: `cipi self-update` now calls **`ensure_cipi_api_permissions` unconditionally right after the root chown**, and **`lib/migrations/4.5.3.sh`** repairs already-broken servers (reclaims `storage`/`database`/`bootstrap-cache`/`.env` for `www-data`, clears stale root-owned config cache, restarts FPM + queue). Immediate manual fix on an affected server: `cipi api fix-permissions && systemctl restart php8.5-fpm`.
+
+---
+
 ## [4.5.2] — 2026-06-02
 
 ### Added
