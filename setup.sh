@@ -302,7 +302,17 @@ MATCHEOF
 install_nginx() {
     step_msg "Installing Nginx..."
 
-    apt-get install -y -qq nginx libnginx-mod-http-headers-more-filter
+    # nginx.org mainline (1.29.8+ ships max_headers — mitigates HTTP/2 bomb DoS).
+    curl -fsSL https://nginx.org/keys/nginx_signing.key \
+        | gpg --dearmor > /usr/share/keyrings/nginx-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] \
+https://nginx.org/packages/mainline/ubuntu $(lsb_release -cs) nginx" \
+        > /etc/apt/sources.list.d/nginx.list
+    echo -e "Package: *\nPin: origin nginx.org\nPin: release o=nginx\nPin-Priority: 900\n" \
+        > /etc/apt/preferences.d/99nginx
+
+    apt-get update -qq
+    apt-get install -y -qq nginx
 
     local CPU_CORES
     CPU_CORES=$(nproc)
@@ -311,7 +321,6 @@ install_nginx() {
 user www-data;
 worker_processes ${CPU_CORES};
 pid /run/nginx.pid;
-include /etc/nginx/modules-enabled/*.conf;
 
 events {
     worker_connections 2048;
@@ -326,7 +335,7 @@ http {
     types_hash_max_size 2048;
     server_names_hash_bucket_size 64;
     server_tokens off;
-    more_clear_headers 'Server' 'X-Powered-By';
+    max_headers 1000;
 
     include /etc/nginx/mime.types;
     default_type application/octet-stream;

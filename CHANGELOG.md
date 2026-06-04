@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.5.9] — 2026-06-04
+
+### Security
+
+- **Nginx upgraded to mainline 1.29.8+ (HTTP/2 bomb mitigation)** — a newly disclosed remote DoS dubbed [HTTP/2 bomb](https://thehackernews.com/2026/06/new-http2-bomb-vulnerability-allows.html) chains HPACK header amplification with a zero-byte HTTP/2 flow-control window so the server never frees allocated memory; nginx fixed this in **1.29.8** with the **`max_headers`** directive (default 1000). Ubuntu 24.04's distro nginx (1.24.x) does not include that fix, so Cipi now installs and upgrades nginx from the **[nginx.org mainline APT repository](https://nginx.org/en/linux_packages.html#Ubuntu)** (pinned with `99nginx` preferences) instead of the Ubuntu archive. Fresh installs via `setup.sh` get mainline nginx out of the box; existing servers receive **migration 4.5.9** on `cipi self-update`, which adds the repo, upgrades the package, and rewrites `/etc/nginx/nginx.conf` with `max_headers 1000`. The Ubuntu-only **`libnginx-mod-http-headers-more-filter`** module (used for `more_clear_headers`) is removed — it is incompatible with nginx.org packages; **`server_tokens off`** and per-vhost **`fastcgi_hide_header X-Powered-By`** remain in place. Nginx stays on the existing unattended-upgrades blacklist (Cipi-managed upgrades only).
+
+---
+
 ## [4.5.8] — 2026-06-02
 
 ### Added
