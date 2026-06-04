@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.5.12] — 2026-06-04
+
+### Fixed
+
+- **PHP install / `apt-get update` failed on Ubuntu 26.04 (resolute)** — `setup.sh` and `cipi php install` always added **`ppa:ondrej/php`**, but Launchpad does not publish a **`resolute`** suite yet, so `apt-get update` failed with *Release file not found* (including on re-runs at *Installing base packages* when a broken PPA source was left from a partial install). Cipi now probes PHP APT sources per codename: when Launchpad ondrej has a suite (**noble**, **jammy**, …) it uses the PPA as before; when it does not (**resolute** / Ubuntu 26.04) it configures **[packages.sury.org](https://packages.sury.org/php/)** instead (same maintainer, co-installable **`php8.3` / `php8.4` / `php8.5`** — multi-PHP works on 26.04); if neither repo is available, it falls back to **Ubuntu main** (single version). **`lib/php-apt.sh`** centralises the logic; `setup.sh` bootstraps it before the first `apt-get update` and sanitises stale broken sources; **`cipi php install`** uses the same helper. **Migration 4.5.12** removes a leftover broken ondrej source and wires up packages.sury.org where needed.
+
+---
+
 ## [4.5.11] — 2026-06-04
 
 ### Fixed

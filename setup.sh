@@ -21,6 +21,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+DIM='\033[2m'
 NC='\033[0m'
 BOLD='\033[1m'
 
@@ -81,6 +82,10 @@ check_requirements() {
 
 install_basics() {
     step_msg "Installing base packages..."
+
+    if declare -f cipi_sanitize_broken_apt_sources >/dev/null 2>&1; then
+        cipi_sanitize_broken_apt_sources
+    fi
 
     apt-get update -qq
     apt-get install -y -qq \
@@ -656,7 +661,27 @@ install_valkey() {
 install_php() {
     step_msg "Installing PHP 8.5..."
 
-    add-apt-repository -y ppa:ondrej/php &>/dev/null
+    if declare -f php_setup_apt_sources >/dev/null 2>&1; then
+        if ! php_setup_apt_sources; then
+            echo -e "${YELLOW}  No multi-PHP repo for '$(_cn=$(lsb_release -cs 2>/dev/null); echo "${_cn:-?}")' — PHP from Ubuntu archive only (single version)${NC}"
+        elif declare -f php_apt_source_label >/dev/null 2>&1; then
+            echo -e "${DIM}  PHP packages via $(php_apt_source_label)${NC}"
+        fi
+    else
+        local _cn; _cn=$(lsb_release -cs 2>/dev/null)
+        case "$_cn" in
+            resolute|questing)
+                add-apt-repository -y --remove ppa:ondrej/php &>/dev/null || true
+                rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php*.list \
+                      /etc/apt/sources.list.d/ondrej-ubuntu-php*.sources 2>/dev/null || true
+                echo -e "${YELLOW}  ondrej/php PPA unavailable — installing PHP from Ubuntu archive${NC}"
+                ;;
+            *)
+                add-apt-repository -y ppa:ondrej/php &>/dev/null
+                ;;
+        esac
+    fi
+
     apt-get update -qq
 
     local EXTENSIONS="fpm common cli curl bcmath mbstring mysql sqlite3 pgsql memcached redis zip xml soap gd imagick intl"
@@ -1102,6 +1127,17 @@ main() {
 
     show_logo
     check_requirements
+
+    # Bootstrap shared APT helpers (php-apt.sh) before first apt-get update.
+    local _cipi_setup_lib="/tmp/cipi-setup-lib-$$"
+    mkdir -p "$_cipi_setup_lib"
+    if curl -fsSL "https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/lib/php-apt.sh" \
+        -o "${_cipi_setup_lib}/php-apt.sh" 2>/dev/null \
+       && [[ -s "${_cipi_setup_lib}/php-apt.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${_cipi_setup_lib}/php-apt.sh"
+    fi
+
     collect_ssh_key
     install_basics
     setup_swap

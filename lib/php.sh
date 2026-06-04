@@ -21,8 +21,15 @@ _php_install() {
     [[ -z "$v" ]] && { error "Usage: cipi php install <8.3|8.4|8.5>"; exit 1; }
     validate_php_version "$v" || { error "Invalid PHP version: $v (Deployer 8 requires PHP >= 8.3; use 8.3, 8.4 or 8.5)"; exit 1; }
     php_is_installed "$v" && { info "PHP $v already installed"; return; }
-    step "Adding PPA..."
-    add-apt-repository -y ppa:ondrej/php &>/dev/null; apt-get update -qq
+    # shellcheck source=/dev/null
+    source "${CIPI_LIB}/php-apt.sh"
+    step "Configuring PHP APT sources..."
+    if ! php_setup_apt_sources; then
+        info "No multi-PHP repo — using Ubuntu archive for PHP ${v} (single version only)"
+    else
+        info "PHP packages via $(php_apt_source_label)"
+    fi
+    apt-get update -qq
     step "Installing PHP ${v}..."
     local pkgs=""
     for e in $_PHP_EXT; do pkgs+=" php${v}-${e}"; done
