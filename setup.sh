@@ -314,6 +314,10 @@ https://nginx.org/packages/mainline/ubuntu $(lsb_release -cs) nginx" \
     apt-get update -qq
     apt-get install -y -qq nginx
 
+    # nginx.org packages use conf.d/ only — Cipi expects sites-available/sites-enabled.
+    mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /var/www/html
+    rm -f /etc/nginx/conf.d/default.conf
+
     local CPU_CORES
     CPU_CORES=$(nproc)
 

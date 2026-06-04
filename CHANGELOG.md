@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.5.10] — 2026-06-04
+
+### Fixed
+
+- **Fresh install failed after nginx.org package install** — the official nginx.org DEB does not create `/etc/nginx/sites-available/` or `/etc/nginx/sites-enabled/` (Debian/Ubuntu convention only), so `setup.sh` aborted with *No such file or directory* when writing the default vhost. `setup.sh` now creates those directories (and `/var/www/html`) and removes the stock `/etc/nginx/conf.d/default.conf` so it does not conflict with Cipi's default server block. **Migration 4.5.10** applies the same layout fix on existing servers (idempotent).
+
+---
+
 ## [4.5.9] — 2026-06-04
 
 ### Security

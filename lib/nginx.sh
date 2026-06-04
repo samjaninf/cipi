@@ -32,6 +32,12 @@ https://nginx.org/packages/mainline/ubuntu $(lsb_release -cs) nginx" \
     apt-get update -qq 2>/dev/null || true
 }
 
+nginx_ensure_sites_layout() {
+    # nginx.org packages ship conf.d/ only; Cipi uses Debian-style sites-* dirs.
+    mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /var/www/html
+    rm -f /etc/nginx/conf.d/default.conf
+}
+
 nginx_write_global_conf() {
     local worker_processes="${1:-$(nproc)}"
 
@@ -125,6 +131,7 @@ nginx_upgrade_mainline_for_http2_bomb() {
     fi
 
     echo "  Rewriting /etc/nginx/nginx.conf (max_headers, drop headers-more module)..."
+    nginx_ensure_sites_layout
     nginx_write_global_conf "$workers"
 
     if ! nginx -t 2>&1; then
