@@ -4,8 +4,13 @@
 # Copy to cipi-sh/cipi/lib/gui.sh and wire in the main `cipi` router:
 #   gui) require_root; source "${CIPI_LIB}/gui.sh"; gui_command "$@" ;;
 
-[[ -z "${CIPI_GUI_ROOT:-}" ]] && readonly CIPI_GUI_ROOT="/opt/cipi/gui"
-[[ -z "${CIPI_GUI_CONFIG:-}" ]] && readonly CIPI_GUI_CONFIG="${CIPI_CONFIG}/gui.json"
+# When sourced inside migrations/self-update, CIPI_GUI_* may already be readonly — only assign when unset.
+if [[ -z "${CIPI_GUI_ROOT:-}" ]]; then
+    readonly CIPI_GUI_ROOT="/opt/cipi/gui"
+fi
+if [[ -z "${CIPI_GUI_CONFIG:-}" ]]; then
+    readonly CIPI_GUI_CONFIG="${CIPI_CONFIG}/gui.json"
+fi
 
 _gui_pkg_dir() {
     local pkg_dir="/opt/cipi/cipi-gui"

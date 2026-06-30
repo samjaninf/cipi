@@ -50,6 +50,12 @@ selfupdate_command() {
     [[ -d "${tmp}/cipi-gui" ]] && rm -rf /opt/cipi/cipi-gui && cp -a "${tmp}/cipi-gui" /opt/cipi/cipi-gui
     chown -R root:root /usr/local/bin/cipi /opt/cipi
 
+    # Run migrations — child bash processes need CIPI_* in the environment.
+    # The main cipi binary sets CIPI_LIB/CONFIG/LOG readonly; export by name only (no reassignment).
+    export CIPI_LIB CIPI_CONFIG CIPI_LOG
+    [[ -z "${CIPI_API_ROOT:-}" ]] && export CIPI_API_ROOT="/opt/cipi/api"
+    [[ -z "${CIPI_GUI_ROOT:-}" ]] && export CIPI_GUI_ROOT="/opt/cipi/gui"
+
     # The blanket `chown -R root:root /opt/cipi` above also re-roots the panel
     # Laravel app under /opt/cipi/api: storage/, database/ and bootstrap/cache/
     # become root:root, so PHP-FPM (www-data) can no longer open
@@ -65,11 +71,6 @@ selfupdate_command() {
         ensure_cipi_gui_permissions
     fi
 
-    # Run migrations — child bash processes need CIPI_* in the environment.
-    # The main cipi binary sets CIPI_LIB/CONFIG/LOG readonly; export by name only (no reassignment).
-    export CIPI_LIB CIPI_CONFIG CIPI_LOG
-    export CIPI_API_ROOT="${CIPI_API_ROOT:-/opt/cipi/api}"
-    export CIPI_GUI_ROOT="${CIPI_GUI_ROOT:-/opt/cipi/gui}"
     if [[ -d "${tmp}/lib/migrations" ]]; then
         for m in $(ls "${tmp}/lib/migrations/"*.sh 2>/dev/null|sort -V); do
             local mv; mv=$(basename "$m" .sh)
