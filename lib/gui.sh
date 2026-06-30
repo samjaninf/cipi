@@ -329,6 +329,16 @@ EOF
     chmod 644 /etc/cron.d/cipi-gui
 }
 
+# ── Install detection + removal ─────────────────────────────────
+
+_gui_is_installed() {
+    [[ -f "${CIPI_GUI_ROOT}/artisan" ]] \
+        || [[ -f "${CIPI_GUI_CONFIG}" ]] \
+        || [[ -f /etc/nginx/sites-available/cipi-gui ]] \
+        || [[ -f /etc/php/8.5/fpm/pool.d/cipi-gui.conf ]] \
+        || [[ -f /etc/cron.d/cipi-gui ]]
+}
+
 # ── Commands ────────────────────────────────────────────────────
 
 gui_setup() {
@@ -478,6 +488,57 @@ gui_fix_permissions() {
     success "GUI permissions and runtime repaired"
 }
 
+gui_remove() {
+    parse_args "$@"
+
+    if ! _gui_is_installed; then
+        info "GUI is not installed — nothing to remove"
+        return 0
+    fi
+
+    local domain=""
+    if [[ -f "${CIPI_GUI_CONFIG}" ]]; then
+        domain=$(vault_read gui.json 2>/dev/null | jq -r '.domain // empty' 2>/dev/null) || domain=""
+        [[ "$domain" == "null" ]] && domain=""
+    fi
+
+    if [[ "${ARG_force:-}" != "true" ]]; then
+        echo ""
+        warn "Will remove the Cipi GUI panel and all related config"
+        [[ -n "$domain" ]] && echo -e "  ${DIM}Domain: ${domain}${NC}"
+        confirm "Remove GUI?" || { info "Cancelled"; return; }
+    fi
+
+    step "Nginx..."
+    rm -f /etc/nginx/sites-enabled/cipi-gui /etc/nginx/sites-available/cipi-gui
+    reload_nginx 2>/dev/null || true
+
+    step "PHP-FPM..."
+    rm -f /etc/php/8.5/fpm/pool.d/cipi-gui.conf
+    reload_php_fpm "8.5" 2>/dev/null || true
+
+    step "Cron..."
+    rm -f /etc/cron.d/cipi-gui
+
+    if [[ -n "$domain" ]]; then
+        step "SSL..."
+        certbot delete --cert-name "$domain" --non-interactive 2>/dev/null || true
+    fi
+
+    step "Application..."
+    rm -rf "${CIPI_GUI_ROOT}" "${CIPI_GUI_ROOT}.old" /tmp/cipi-gui-build 2>/dev/null || true
+
+    step "Config..."
+    rm -f "${CIPI_GUI_CONFIG}" 2>/dev/null || true
+
+    rm -f /var/log/cipi-gui-fpm-slow.log /var/log/cipi-gui-php-error.log 2>/dev/null || true
+
+    log_action "GUI REMOVED${domain:+: $domain}"
+    success "GUI removed"
+    echo -e "  ${DIM}The bundled cipi-gui package at /opt/cipi/cipi-gui was kept (used by cipi self-update).${NC}"
+    echo -e "  ${DIM}Reinstall with: cipi gui <domain>${NC}"
+}
+
 gui_reset_user() {
     [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && {
         error "Laravel GUI app not found. Run: cipi gui <domain>"
@@ -519,6 +580,7 @@ gui_command() {
         "")
             error "Usage: cipi gui <domain>"
             echo "       cipi gui ssl | update | upgrade | status | fix-permissions | repair"
+            echo "       cipi gui remove [--force] | uninstall [--force]"
             echo "       cipi gui reset-user [--email=] [--password=] [--name=]"
             exit 1
             ;;
@@ -527,6 +589,7 @@ gui_command() {
         upgrade) gui_upgrade ;;
         status) gui_status ;;
         fix-permissions|repair) gui_fix_permissions ;;
+        remove|uninstall) gui_remove "$@" ;;
         reset-user|reset-password) gui_reset_user "$@" ;;
         *)
             validate_domain "$sub" && gui_setup "$sub" || exit 1

@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.4] — 2026-07-01
+
+### Added
+
+- **`cipi gui remove`** — uninstall the web control panel when configured: removes Nginx vhost, PHP-FPM pool, scheduler cron, SSL certificate (if domain is in **`gui.json`**), Laravel app at **`/opt/cipi/gui`**, vault config, and log files. Alias **`uninstall`**; **`--force`** skips confirmation. The bundled **`/opt/cipi/cipi-gui`** package is kept (same model as **`cipi-api`**).
+
+---
+
 ## [4.7.3] — 2026-06-30
 
 ### Fixed
