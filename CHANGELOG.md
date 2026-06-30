@@ -14,6 +14,10 @@ All notable changes to Cipi are documented in this file.
 
 - **`cipi gui remove`** — uninstall the web control panel when configured (Nginx, FPM, cron, SSL, Laravel app, vault config). Alias **`uninstall`**; **`--force`** skips confirmation.
 
+### Fixed
+
+- **`cipi gui reset-user`** — no longer requires **`--reset`** on **`cipi:seed-gui-user`** (missing in current **`cipi/gui`** on GitHub). Resets the primary admin via an inline Laravel bootstrap script when the package option is unavailable.
+
 ---
 
 ## [4.7.3] — 2026-06-30

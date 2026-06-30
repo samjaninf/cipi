@@ -522,6 +522,64 @@ gui_remove() {
     echo -e "  ${DIM}Reinstall with: cipi gui <domain>${NC}"
 }
 
+# Reset primary admin (email/name/password + clear 2FA). Works with any cipi/gui version.
+_gui_reset_primary_admin() {
+    local email="${1:-}" password="$2" name="${3:-}"
+    local payload runner rc=0
+
+    payload=$(mktemp /tmp/cipi-gui-reset.XXXXXX.json)
+    jq -n \
+        --arg email "$email" \
+        --arg password "$password" \
+        --arg name "$name" \
+        '{
+            email: (if ($email | length) > 0 then $email else null end),
+            password: $password,
+            name: (if ($name | length) > 0 then $name else null end)
+        }' > "$payload"
+
+    runner=$(mktemp /tmp/cipi-gui-reset.XXXXXX.php)
+    cat > "$runner" <<'PHP'
+<?php
+$payload = json_decode(file_get_contents($argv[1] ?? ''), true);
+$root = $argv[2] ?? '';
+if (! is_array($payload) || $root === '' || ! is_file($root.'/artisan')) {
+    fwrite(STDERR, "Invalid reset payload\n");
+    exit(1);
+}
+
+require $root.'/vendor/autoload.php';
+$app = require $root.'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+$user = App\Models\User::query()->orderBy('id')->first();
+if (! $user) {
+    fwrite(STDERR, "No admin user found\n");
+    exit(1);
+}
+
+$user->forceFill([
+    'email' => $payload['email'] ?? $user->email,
+    'name' => $payload['name'] ?? $user->name,
+    'password' => Illuminate\Support\Facades\Hash::make($payload['password']),
+    'two_factor_secret' => null,
+    'two_factor_enabled' => false,
+    'two_factor_confirmed_at' => null,
+])->save();
+PHP
+
+    if ! sudo -u www-data php "$runner" "$payload" "${CIPI_GUI_ROOT}"; then
+        rc=1
+    fi
+    rm -f "$payload" "$runner"
+    return "$rc"
+}
+
+_gui_seed_supports_reset() {
+    (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan cipi:seed-gui-user --help 2>/dev/null) \
+        | grep -q '\-\-reset'
+}
+
 gui_reset_user() {
     [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && {
         error "Laravel GUI app not found. Run: cipi gui <domain>"
@@ -538,20 +596,25 @@ gui_reset_user() {
     fi
     _gui_resolve_admin_password password "${ARG_password:-}" || exit 1
 
-    local cmd=(sudo -u www-data php artisan cipi:seed-gui-user --reset)
-    [[ -n "$email" ]] && cmd+=(--email="${email}")
-    cmd+=(--password="${password}")
-    [[ -n "${ARG_name:-}" ]] && cmd+=(--name="${ARG_name}")
-
     step "Resetting GUI admin user..."
     ensure_cipi_gui_permissions
-    if ! (cd "${CIPI_GUI_ROOT}" && "${cmd[@]}"); then
+
+    if _gui_seed_supports_reset; then
+        local cmd=(sudo -u www-data php artisan cipi:seed-gui-user --reset)
+        [[ -n "$email" ]] && cmd+=(--email="${email}")
+        cmd+=(--password="${password}")
+        [[ -n "${ARG_name:-}" ]] && cmd+=(--name="${ARG_name}")
+        if ! (cd "${CIPI_GUI_ROOT}" && "${cmd[@]}"); then
+            error "Failed to reset GUI admin user"
+            exit 1
+        fi
+    elif ! _gui_reset_primary_admin "$email" "$password" "${ARG_name:-}"; then
         error "Failed to reset GUI admin user"
         exit 1
     fi
 
     log_action "GUI ADMIN USER RESET"
-    success "GUI admin user reset"
+    success "GUI admin user reset (2FA disabled — re-enable from Settings after login)"
     unset password
 }
 
