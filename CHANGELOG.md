@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.1] — 2026-06-30
+
+### Fixed
+
+- **GUI HTTP 500 (`open_basedir` / `CipiGuiServiceProvider`)** — the `cipi-gui` PHP-FPM pool allowed only `/opt/cipi/gui/`, but Composer's path repository symlinked `cipi/gui` from `/opt/cipi/cipi-gui/`, so autoload failed at runtime. **`lib/gui.sh`** now sets **`open_basedir`** to include **`/opt/cipi/cipi-gui/`**, configures the path repo with **`symlink: false`** (package copied into `vendor/`), and refreshes the FPM pool on **`cipi gui update`** / **`fix-permissions`**. **Migration 4.7.1** retrofits existing servers.
+
+---
+
 ## [4.7.0] — 2026-06-30
 
 ### Added

@@ -103,13 +103,21 @@ selfupdate_command() {
     if [[ -f "${CIPI_GUI_ROOT:-/opt/cipi/gui}/artisan" ]] && [[ -d /opt/cipi/cipi-gui ]]; then
         step "Updating cipi/gui in Laravel app..."
         local gui_root="${CIPI_GUI_ROOT:-/opt/cipi/gui}"
-        (cd "$gui_root" && composer config repositories.cipi-gui path /opt/cipi/cipi-gui 2>/dev/null) || true
+        if [[ -f /opt/cipi/lib/gui.sh ]]; then
+            # shellcheck source=/dev/null
+            source /opt/cipi/lib/gui.sh
+            _gui_composer_path_repo "$gui_root" /opt/cipi/cipi-gui
+        else
+            (cd "$gui_root" && composer config --json repositories.cipi-gui \
+                '{"type":"path","url":"/opt/cipi/cipi-gui","options":{"symlink":false}}' 2>/dev/null) || true
+        fi
         (cd "$gui_root" && composer update cipi/gui --no-interaction 2>/dev/null) || true
         chown -R www-data:www-data "$gui_root"
         if [[ -f /opt/cipi/lib/gui.sh ]]; then
             # shellcheck source=/dev/null
             source /opt/cipi/lib/gui.sh
             ensure_cipi_gui_permissions
+            _gui_create_fpm_pool
         fi
         (cd "$gui_root" && sudo -u www-data php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
         (cd "$gui_root" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true

@@ -18,6 +18,21 @@ _gui_pkg_dir() {
     echo "$pkg_dir"
 }
 
+# Path repo with symlink=false so PHP-FPM open_basedir (under /opt/cipi/gui) can load the package.
+_gui_composer_path_repo() {
+    local dir="$1"
+    local pkg_dir="${2:-$(_gui_pkg_dir)}"
+    [[ -d "$dir" && -d "$pkg_dir" ]] || return 0
+    (cd "$dir" && composer config --json repositories.cipi-gui \
+        "{\"type\":\"path\",\"url\":\"${pkg_dir}\",\"options\":{\"symlink\":false}}" 2>/dev/null) || true
+}
+
+_gui_open_basedir() {
+    local pkg_dir
+    pkg_dir=$(_gui_pkg_dir)
+    echo "${CIPI_GUI_ROOT}/:${pkg_dir}/:/tmp/:/proc/"
+}
+
 _gui_clear_host_routes() {
     local base="$1"
     echo '<?php' > "${base}/routes/web.php"
@@ -168,7 +183,7 @@ _gui_ensure_laravel_app() {
         local pkg_dir
         pkg_dir=$(_gui_pkg_dir)
         if [[ -d "$pkg_dir" ]]; then
-            (cd /tmp/cipi-gui-build && composer config repositories.cipi-gui path "$pkg_dir" 2>/dev/null) || true
+            _gui_composer_path_repo /tmp/cipi-gui-build "$pkg_dir"
             (cd /tmp/cipi-gui-build && composer require cipi/gui:@dev --no-interaction 2>/dev/null) || true
         else
             (cd /tmp/cipi-gui-build && composer require cipi/gui --no-interaction 2>/dev/null) || true
@@ -206,7 +221,7 @@ _gui_update_package() {
     local pkg_dir
     pkg_dir=$(_gui_pkg_dir)
     if [[ -d "$pkg_dir" ]]; then
-        (cd "${CIPI_GUI_ROOT}" && composer config repositories.cipi-gui path "$pkg_dir" 2>/dev/null) || true
+        _gui_composer_path_repo "${CIPI_GUI_ROOT}" "$pkg_dir"
     fi
     (cd "${CIPI_GUI_ROOT}" && composer update cipi/gui --no-interaction 2>/dev/null) || true
     chown -R www-data:www-data "${CIPI_GUI_ROOT}" 2>/dev/null || true
@@ -218,6 +233,8 @@ _gui_update_package() {
 # ── PHP-FPM + Nginx ───────────────────────────────────────────────
 
 _gui_create_fpm_pool() {
+    local basedir
+    basedir=$(_gui_open_basedir)
     cat > /etc/php/8.5/fpm/pool.d/cipi-gui.conf <<EOF
 [cipi-gui]
 user = www-data
@@ -237,7 +254,7 @@ slowlog = /var/log/cipi-gui-fpm-slow.log
 request_slowlog_timeout = 30s
 catch_workers_output = yes
 php_admin_value[error_log] = /var/log/cipi-gui-php-error.log
-php_admin_value[open_basedir] = ${CIPI_GUI_ROOT}/:/tmp/:/proc/
+php_admin_value[open_basedir] = ${basedir}
 EOF
     touch /var/log/cipi-gui-fpm-slow.log /var/log/cipi-gui-php-error.log 2>/dev/null || true
     chown www-data:adm /var/log/cipi-gui-fpm-slow.log /var/log/cipi-gui-php-error.log 2>/dev/null || true
@@ -368,6 +385,7 @@ gui_update() {
     _gui_ensure_log_stack_env
     _gui_ensure_session_driver_env
     _gui_apply_sqlite_pragmas
+    _gui_create_fpm_pool
     _gui_setup_cron
     reload_php_fpm "8.5"
     success "GUI updated"
@@ -388,7 +406,7 @@ gui_upgrade() {
     local pkg_dir
     pkg_dir=$(_gui_pkg_dir)
     if [[ -d "$pkg_dir" ]]; then
-        (cd /tmp/cipi-gui-build && composer config repositories.cipi-gui path "$pkg_dir")
+        _gui_composer_path_repo /tmp/cipi-gui-build "$pkg_dir"
         (cd /tmp/cipi-gui-build && composer require cipi/gui:@dev --no-interaction)
     else
         (cd /tmp/cipi-gui-build && composer require cipi/gui --no-interaction)
@@ -428,6 +446,10 @@ gui_status() {
 
 gui_fix_permissions() {
     ensure_cipi_gui_permissions
+    if [[ -f "${CIPI_GUI_ROOT}/artisan" ]]; then
+        _gui_create_fpm_pool
+        reload_php_fpm "8.5" 2>/dev/null || true
+    fi
     success "GUI permissions fixed"
 }
 
