@@ -279,6 +279,8 @@ server {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/cipi-gui.sock;
         fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        fastcgi_param HTTP_X_FORWARDED_PROTO \$scheme;
+        fastcgi_param HTTPS \$https if_not_empty;
         include fastcgi_params;
         fastcgi_read_timeout 300s;
         fastcgi_buffers 16 16k;

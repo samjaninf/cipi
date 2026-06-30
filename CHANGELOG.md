@@ -4,6 +4,16 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.2] — 2026-06-30
+
+### Fixed
+
+- **GUI giant icons / broken layout** — the inline CSS subset was missing size utilities used in Blade (`h-9`, `h-12`, `h-16`, `mx-auto`, `text-surface-600`, `bg-surface-900/50`, …); SVGs without matching rules rendered at full browser default size. Added the missing utilities plus safe SVG defaults in **`cipi/gui`** `partials/styles.blade.php`.
+- **GUI Livewire / Alpine JS conflicts** — **`layouts/app.blade.php`** loaded Alpine from jsDelivr on top of Livewire 3’s bundled Alpine, breaking `wire:click`, polling, and `x-data` toasts. Removed the duplicate script tag.
+- **GUI HTTPS / Livewire** — Nginx vhost now passes **`HTTP_X_FORWARDED_PROTO`** and **`HTTPS`** to PHP-FPM so Laravel generates correct URLs behind TLS. **Migration 4.7.2** patches existing vhosts in place (preserves certbot SSL blocks) and updates **`cipi/gui`**.
+
+---
+
 ## [4.7.1] — 2026-06-30
 
 ### Fixed
