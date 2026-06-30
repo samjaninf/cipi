@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- New Cipi logo and SVG favicon (replaces generic server icon and missing tab icon)
+- Package installed by Cipi CLI from GitHub VCS (`https://github.com/cipi-sh/gui`), not bundled path copy
+
 ### Added
 
 - Initial release of Cipi GUI control panel

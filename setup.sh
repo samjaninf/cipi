@@ -840,11 +840,7 @@ install_cipi() {
         cp -a cipi-install/cipi-api /opt/cipi/cipi-api
     fi
 
-    # Cipi GUI package (for cipi gui)
-    if [ -d "cipi-install/cipi-gui" ]; then
-        rm -rf /opt/cipi/cipi-gui 2>/dev/null
-        cp -a cipi-install/cipi-gui /opt/cipi/cipi-gui
-    fi
+    # Cipi GUI is installed via Composer from https://github.com/cipi-sh/gui (cipi gui)
 
     # Worker helper
     cp cipi-install/lib/cipi-worker.sh /usr/local/bin/cipi-worker

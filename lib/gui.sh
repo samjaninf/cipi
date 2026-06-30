@@ -11,26 +11,35 @@ fi
 if [[ -z "${CIPI_GUI_CONFIG:-}" ]]; then
     readonly CIPI_GUI_CONFIG="${CIPI_CONFIG}/gui.json"
 fi
+if [[ -z "${CIPI_GUI_REPO:-}" ]]; then
+    readonly CIPI_GUI_REPO="https://github.com/cipi-sh/gui"
+fi
+if [[ -z "${CIPI_GUI_BRANCH:-}" ]]; then
+    readonly CIPI_GUI_BRANCH="main"
+fi
 
-_gui_pkg_dir() {
-    local pkg_dir="/opt/cipi/cipi-gui"
-    [[ -d "${CIPI_LIB}/../cipi-gui" ]] && pkg_dir="${CIPI_LIB}/../cipi-gui"
-    echo "$pkg_dir"
+# Composer VCS repository for cipi/gui (https://github.com/cipi-sh/gui).
+_gui_composer_vcs_repo() {
+    local dir="$1"
+    [[ -d "$dir" ]] || return 0
+    (cd "$dir" && composer config repositories.cipi-gui \
+        "{\"type\":\"vcs\",\"url\":\"${CIPI_GUI_REPO}\"}" 2>/dev/null) || true
 }
 
-# Path repo with symlink=false so PHP-FPM open_basedir (under /opt/cipi/gui) can load the package.
-_gui_composer_path_repo() {
+_gui_require_package() {
     local dir="$1"
-    local pkg_dir="${2:-$(_gui_pkg_dir)}"
-    [[ -d "$dir" && -d "$pkg_dir" ]] || return 0
-    (cd "$dir" && composer config --json repositories.cipi-gui \
-        "{\"type\":\"path\",\"url\":\"${pkg_dir}\",\"options\":{\"symlink\":false}}" 2>/dev/null) || true
+    [[ -d "$dir" ]] || return 1
+    _gui_composer_vcs_repo "$dir"
+    (cd "$dir" && composer config minimum-stability dev 2>/dev/null) || true
+    (cd "$dir" && composer config prefer-stable true 2>/dev/null) || true
+    (cd "$dir" && composer require "cipi/gui:dev-${CIPI_GUI_BRANCH}" --no-interaction 2>/dev/null) \
+        || (cd "$dir" && composer require cipi/gui --no-interaction 2>/dev/null) \
+        || return 1
+    return 0
 }
 
 _gui_open_basedir() {
-    local pkg_dir
-    pkg_dir=$(_gui_pkg_dir)
-    echo "${CIPI_GUI_ROOT}/:${pkg_dir}/:/tmp/:/proc/"
+    echo "${CIPI_GUI_ROOT}/:/tmp/:/proc/"
 }
 
 _gui_clear_host_routes() {
@@ -180,14 +189,11 @@ _gui_ensure_laravel_app() {
             exit 1
         }
 
-        local pkg_dir
-        pkg_dir=$(_gui_pkg_dir)
-        if [[ -d "$pkg_dir" ]]; then
-            _gui_composer_path_repo /tmp/cipi-gui-build "$pkg_dir"
-            (cd /tmp/cipi-gui-build && composer require cipi/gui:@dev --no-interaction 2>/dev/null) || true
-        else
-            (cd /tmp/cipi-gui-build && composer require cipi/gui --no-interaction 2>/dev/null) || true
-        fi
+        step "Installing cipi/gui from GitHub..."
+        _gui_require_package /tmp/cipi-gui-build || {
+            error "Failed to install cipi/gui from ${CIPI_GUI_REPO}"
+            exit 1
+        }
 
         sed -i "s|^APP_ENV=.*|APP_ENV=production|" /tmp/cipi-gui-build/.env
         sed -i "s|^APP_DEBUG=.*|APP_DEBUG=false|" /tmp/cipi-gui-build/.env
@@ -217,27 +223,12 @@ _gui_ensure_laravel_app() {
     fi
 }
 
-_gui_materialize_package() {
-    [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && return 0
-    local pkg_dir
-    pkg_dir=$(_gui_pkg_dir)
-    [[ -d "$pkg_dir" ]] || return 0
-    _gui_composer_path_repo "${CIPI_GUI_ROOT}" "$pkg_dir"
-    (cd "${CIPI_GUI_ROOT}" && composer reinstall cipi/gui --no-interaction 2>/dev/null) \
-        || (cd "${CIPI_GUI_ROOT}" && composer update cipi/gui --no-interaction 2>/dev/null) \
-        || true
-    if [[ -d "${CIPI_GUI_ROOT}/vendor/cipi/gui" ]]; then
-        chown -R www-data:www-data "${CIPI_GUI_ROOT}/vendor/cipi" 2>/dev/null || true
-    fi
-}
-
 _gui_repair_runtime() {
     [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && {
         error "Laravel GUI app not found."
         return 1
     }
-    step "Repairing GUI runtime (open_basedir + cipi/gui vendor copy)..."
-    _gui_materialize_package
+    step "Repairing GUI runtime (open_basedir + permissions)..."
     ensure_cipi_gui_permissions
     _gui_create_fpm_pool
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan optimize:clear 2>/dev/null) || true
@@ -245,12 +236,8 @@ _gui_repair_runtime() {
 }
 
 _gui_update_package() {
-    local pkg_dir
-    pkg_dir=$(_gui_pkg_dir)
-    if [[ -d "$pkg_dir" ]]; then
-        _gui_composer_path_repo "${CIPI_GUI_ROOT}" "$pkg_dir"
-    fi
-    _gui_materialize_package
+    _gui_composer_vcs_repo "${CIPI_GUI_ROOT}"
+    (cd "${CIPI_GUI_ROOT}" && composer update cipi/gui --no-interaction 2>/dev/null) || true
     chown -R www-data:www-data "${CIPI_GUI_ROOT}" 2>/dev/null || true
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
@@ -442,14 +429,11 @@ gui_upgrade() {
     rm -rf /tmp/cipi-gui-build 2>/dev/null
     (cd /tmp && composer create-project laravel/laravel cipi-gui-build --no-interaction --prefer-dist) || exit 1
 
-    local pkg_dir
-    pkg_dir=$(_gui_pkg_dir)
-    if [[ -d "$pkg_dir" ]]; then
-        _gui_composer_path_repo /tmp/cipi-gui-build "$pkg_dir"
-        (cd /tmp/cipi-gui-build && composer require cipi/gui:@dev --no-interaction)
-    else
-        (cd /tmp/cipi-gui-build && composer require cipi/gui --no-interaction)
-    fi
+    step "Installing cipi/gui from GitHub..."
+    _gui_require_package /tmp/cipi-gui-build || {
+        error "Failed to install cipi/gui from ${CIPI_GUI_REPO}"
+        exit 1
+    }
 
     [[ -f "${backup_dir}/.env" ]] && cp "${backup_dir}/.env" /tmp/cipi-gui-build/.env
     [[ -f "${backup_dir}/database.sqlite" ]] && cp "${backup_dir}/database.sqlite" /tmp/cipi-gui-build/database/database.sqlite
@@ -535,7 +519,6 @@ gui_remove() {
 
     log_action "GUI REMOVED${domain:+: $domain}"
     success "GUI removed"
-    echo -e "  ${DIM}The bundled cipi-gui package at /opt/cipi/cipi-gui was kept (used by cipi self-update).${NC}"
     echo -e "  ${DIM}Reinstall with: cipi gui <domain>${NC}"
 }
 
