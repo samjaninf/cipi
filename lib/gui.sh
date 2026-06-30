@@ -217,13 +217,40 @@ _gui_ensure_laravel_app() {
     fi
 }
 
+_gui_materialize_package() {
+    [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && return 0
+    local pkg_dir
+    pkg_dir=$(_gui_pkg_dir)
+    [[ -d "$pkg_dir" ]] || return 0
+    _gui_composer_path_repo "${CIPI_GUI_ROOT}" "$pkg_dir"
+    (cd "${CIPI_GUI_ROOT}" && composer reinstall cipi/gui --no-interaction 2>/dev/null) \
+        || (cd "${CIPI_GUI_ROOT}" && composer update cipi/gui --no-interaction 2>/dev/null) \
+        || true
+    if [[ -d "${CIPI_GUI_ROOT}/vendor/cipi/gui" ]]; then
+        chown -R www-data:www-data "${CIPI_GUI_ROOT}/vendor/cipi" 2>/dev/null || true
+    fi
+}
+
+_gui_repair_runtime() {
+    [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && {
+        error "Laravel GUI app not found."
+        return 1
+    }
+    step "Repairing GUI runtime (open_basedir + cipi/gui vendor copy)..."
+    _gui_materialize_package
+    ensure_cipi_gui_permissions
+    _gui_create_fpm_pool
+    (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan optimize:clear 2>/dev/null) || true
+    reload_php_fpm "8.5" 2>/dev/null || true
+}
+
 _gui_update_package() {
     local pkg_dir
     pkg_dir=$(_gui_pkg_dir)
     if [[ -d "$pkg_dir" ]]; then
         _gui_composer_path_repo "${CIPI_GUI_ROOT}" "$pkg_dir"
     fi
-    (cd "${CIPI_GUI_ROOT}" && composer update cipi/gui --no-interaction 2>/dev/null) || true
+    _gui_materialize_package
     chown -R www-data:www-data "${CIPI_GUI_ROOT}" 2>/dev/null || true
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
@@ -447,12 +474,8 @@ gui_status() {
 }
 
 gui_fix_permissions() {
-    ensure_cipi_gui_permissions
-    if [[ -f "${CIPI_GUI_ROOT}/artisan" ]]; then
-        _gui_create_fpm_pool
-        reload_php_fpm "8.5" 2>/dev/null || true
-    fi
-    success "GUI permissions fixed"
+    _gui_repair_runtime || exit 1
+    success "GUI permissions and runtime repaired"
 }
 
 gui_reset_user() {
@@ -495,7 +518,7 @@ gui_command() {
     case "$sub" in
         "")
             error "Usage: cipi gui <domain>"
-            echo "       cipi gui ssl | update | upgrade | status | fix-permissions"
+            echo "       cipi gui ssl | update | upgrade | status | fix-permissions | repair"
             echo "       cipi gui reset-user [--email=] [--password=] [--name=]"
             exit 1
             ;;
@@ -503,7 +526,7 @@ gui_command() {
         update) gui_update ;;
         upgrade) gui_upgrade ;;
         status) gui_status ;;
-        fix-permissions) gui_fix_permissions ;;
+        fix-permissions|repair) gui_fix_permissions ;;
         reset-user|reset-password) gui_reset_user "$@" ;;
         *)
             validate_domain "$sub" && gui_setup "$sub" || exit 1

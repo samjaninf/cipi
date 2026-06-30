@@ -4,6 +4,15 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.3] — 2026-06-30
+
+### Fixed
+
+- **GUI `open_basedir` still blocking `/opt/cipi/cipi-gui/` on existing servers** — **`cipi gui fix-permissions`** now runs a full **`_gui_repair_runtime`**: copies **`cipi/gui`** into **`vendor/`** (`symlink: false` + `composer reinstall`), rewrites the FPM pool with **`/opt/cipi/cipi-gui/`** in **`open_basedir`**, and clears caches. **Migration 4.7.3** applies the same repair on **`cipi self-update`**.
+- **GUI app detail 500 (`Undefined variable $name`)** — **`AppDetail::mount()`** now accepts the **`{name}`** route parameter (`mount(string $name)`).
+
+---
+
 ## [4.7.2] — 2026-06-30
 
 ### Fixed
