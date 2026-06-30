@@ -112,6 +112,12 @@ MCP tools exposed: `health`, `app_info`, `deploy`, `logs`, `db_query`, `artisan`
 
 When you need to manage apps programmatically or integrate with external pipelines, enable the optional API layer with a single command. Bearer tokens, granular permissions, OpenAPI spec available, interactive Swagger docs.
 
+### 🖥️ Web GUI (optional)
+
+Multi-server control panel for operators who prefer a browser over SSH. Register N Cipi servers with API tokens, switch between them from any page, and manage apps, databases, deploys, SSL, aliases, and logs with Livewire UI and async job overlays. Install with **`cipi gui <domain>`** — requires **`cipi api`** on each managed server. Session login with optional Google Authenticator 2FA.
+
+[GitHub](https://github.com/cipi-sh/gui)
+
 ### 🔁 Sync Between Servers
 
 Move entire stacks or single apps between Cipi servers — for migration, failover, or disaster recovery. Archives are encrypted in transit.

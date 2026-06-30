@@ -47,6 +47,7 @@ selfupdate_command() {
     [[ -f "${tmp}/lib/cipi-auth-notify.sh" ]] && cp "${tmp}/lib/cipi-auth-notify.sh" /usr/local/bin/cipi-auth-notify && chmod 700 /usr/local/bin/cipi-auth-notify
     [[ -f "${tmp}/lib/cipi-app-notify.sh" ]] && cp "${tmp}/lib/cipi-app-notify.sh" /usr/local/bin/cipi-app-notify && chmod 700 /usr/local/bin/cipi-app-notify
     [[ -d "${tmp}/cipi-api" ]] && rm -rf /opt/cipi/cipi-api && cp -a "${tmp}/cipi-api" /opt/cipi/cipi-api
+    [[ -d "${tmp}/cipi-gui" ]] && rm -rf /opt/cipi/cipi-gui && cp -a "${tmp}/cipi-gui" /opt/cipi/cipi-gui
     chown -R root:root /usr/local/bin/cipi /opt/cipi
 
     # The blanket `chown -R root:root /opt/cipi` above also re-roots the panel
@@ -58,11 +59,17 @@ selfupdate_command() {
     # package-from-packagist installs it was skipped and the panel stayed
     # broken. Reclaim the writable paths unconditionally, right here.
     ensure_cipi_api_permissions
+    if [[ -f /opt/cipi/lib/gui.sh ]]; then
+        # shellcheck source=/dev/null
+        source /opt/cipi/lib/gui.sh
+        ensure_cipi_gui_permissions
+    fi
 
     # Run migrations — child bash processes need CIPI_* in the environment.
     # The main cipi binary sets CIPI_LIB/CONFIG/LOG readonly; export by name only (no reassignment).
     export CIPI_LIB CIPI_CONFIG CIPI_LOG
     export CIPI_API_ROOT="${CIPI_API_ROOT:-/opt/cipi/api}"
+    export CIPI_GUI_ROOT="${CIPI_GUI_ROOT:-/opt/cipi/gui}"
     if [[ -d "${tmp}/lib/migrations" ]]; then
         for m in $(ls "${tmp}/lib/migrations/"*.sh 2>/dev/null|sort -V); do
             local mv; mv=$(basename "$m" .sh)
@@ -89,6 +96,24 @@ selfupdate_command() {
         (cd "$api_root" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
         systemctl restart cipi-queue 2>/dev/null || true
         success "cipi-api package updated in Laravel app"
+    fi
+
+    # Auto-update cipi/gui package in installed GUI app
+    if [[ -f "${CIPI_GUI_ROOT:-/opt/cipi/gui}/artisan" ]] && [[ -d /opt/cipi/cipi-gui ]]; then
+        step "Updating cipi/gui in Laravel app..."
+        local gui_root="${CIPI_GUI_ROOT:-/opt/cipi/gui}"
+        (cd "$gui_root" && composer config repositories.cipi-gui path /opt/cipi/cipi-gui 2>/dev/null) || true
+        (cd "$gui_root" && composer update cipi/gui --no-interaction 2>/dev/null) || true
+        chown -R www-data:www-data "$gui_root"
+        if [[ -f /opt/cipi/lib/gui.sh ]]; then
+            # shellcheck source=/dev/null
+            source /opt/cipi/lib/gui.sh
+            ensure_cipi_gui_permissions
+        fi
+        (cd "$gui_root" && sudo -u www-data php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
+        (cd "$gui_root" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
+        reload_php_fpm "8.5" 2>/dev/null || true
+        success "cipi/gui package updated in Laravel app"
     fi
 
     echo "$nv" > "${CIPI_CONFIG}/version"

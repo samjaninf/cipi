@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.0] — 2026-06-30
+
+### Added
+
+- **`cipi gui`** — optional web control panel for managing one or more Cipi servers via the REST API ([cipi/gui](https://github.com/cipi-sh/gui)). **`cipi gui <domain>`** provisions a Laravel host at **`/opt/cipi/gui`** (dedicated PHP-FPM pool, Nginx vhost, scheduler cron), **prompts interactively for admin email and password** (password policy: min **12** chars, upper + lower + digit + special, max **4** identical chars in a row), and stores config in **`/etc/cipi/gui.json`**. Subcommands: **`ssl`**, **`update`** (soft `composer update`), **`upgrade`** (full rebuild), **`status`**, **`fix-permissions`**, **`reset-user`** (rewrite admin email/name/password and clear 2FA; same password policy; alias **`reset-password`**). Session login with optional TOTP 2FA; no local queue worker — remote async jobs are polled via the managed servers' **`cipi api`**. The **`cipi/gui`** Composer package is bundled at **`/opt/cipi/cipi-gui`** (same model as **`cipi-api`**). Requires **`cipi api`** enabled on each managed server with a token covering the full ability set.
+
+---
+
 ## [4.6.7] — 2026-06-10
 
 ### Fixed
