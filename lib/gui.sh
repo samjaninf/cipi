@@ -525,9 +525,16 @@ gui_remove() {
 # Reset primary admin (email/name/password + clear 2FA). Works with any cipi/gui version.
 _gui_reset_primary_admin() {
     local email="${1:-}" password="$2" name="${3:-}"
-    local payload runner rc=0
+    local workdir="${CIPI_GUI_ROOT}/storage/app"
+    local payload="${workdir}/cipi-reset-$$.json"
+    local runner="${CIPI_LIB}/gui-reset-admin.php"
+    local rc=0
 
-    payload=$(mktemp /tmp/cipi-gui-reset.XXXXXX.json)
+    [[ -f "$runner" ]] || { error "Missing ${runner}"; return 1; }
+
+    mkdir -p "$workdir"
+    ensure_cipi_gui_permissions
+
     jq -n \
         --arg email "$email" \
         --arg password "$password" \
@@ -537,41 +544,13 @@ _gui_reset_primary_admin() {
             password: $password,
             name: (if ($name | length) > 0 then $name else null end)
         }' > "$payload"
+    chown www-data:www-data "$payload"
+    chmod 600 "$payload"
 
-    runner=$(mktemp /tmp/cipi-gui-reset.XXXXXX.php)
-    cat > "$runner" <<'PHP'
-<?php
-$payload = json_decode(file_get_contents($argv[1] ?? ''), true);
-$root = $argv[2] ?? '';
-if (! is_array($payload) || $root === '' || ! is_file($root.'/artisan')) {
-    fwrite(STDERR, "Invalid reset payload\n");
-    exit(1);
-}
-
-require $root.'/vendor/autoload.php';
-$app = require $root.'/bootstrap/app.php';
-$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-
-$user = App\Models\User::query()->orderBy('id')->first();
-if (! $user) {
-    fwrite(STDERR, "No admin user found\n");
-    exit(1);
-}
-
-$user->forceFill([
-    'email' => $payload['email'] ?? $user->email,
-    'name' => $payload['name'] ?? $user->name,
-    'password' => Illuminate\Support\Facades\Hash::make($payload['password']),
-    'two_factor_secret' => null,
-    'two_factor_enabled' => false,
-    'two_factor_confirmed_at' => null,
-])->save();
-PHP
-
-    if ! sudo -u www-data php "$runner" "$payload" "${CIPI_GUI_ROOT}"; then
+    if ! (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php "$runner" "$payload" "${CIPI_GUI_ROOT}"); then
         rc=1
     fi
-    rm -f "$payload" "$runner"
+    rm -f "$payload"
     return "$rc"
 }
 

@@ -828,6 +828,8 @@ install_cipi() {
     # Lib scripts
     cp cipi-install/lib/*.sh /opt/cipi/lib/
     chmod 700 /opt/cipi/lib/*.sh
+    cp cipi-install/lib/gui-reset-admin.php /opt/cipi/lib/ 2>/dev/null || true
+    chmod 644 /opt/cipi/lib/gui-reset-admin.php 2>/dev/null || true
 
     # Deployer templates (per app type: laravel, custom)
     if [ -d "cipi-install/lib/deployer" ]; then

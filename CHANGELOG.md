@@ -16,7 +16,7 @@ All notable changes to Cipi are documented in this file.
 
 ### Fixed
 
-- **`cipi gui reset-user`** — no longer requires **`--reset`** on **`cipi:seed-gui-user`** (missing in current **`cipi/gui`** on GitHub). Resets the primary admin via an inline Laravel bootstrap script when the package option is unavailable.
+- **`cipi gui reset-user`** — no longer requires **`--reset`** on **`cipi:seed-gui-user`** (missing in current **`cipi/gui`** on GitHub). Resets the primary admin via **`lib/gui-reset-admin.php`**, writing the payload under **`storage/app/`** as **`www-data`** (fixes **`Could not open input file`** when temp files lived in **`/tmp`**).
 
 ---
 
