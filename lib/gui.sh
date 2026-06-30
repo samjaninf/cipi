@@ -80,28 +80,28 @@ _gui_validate_admin_password() {
 
 _gui_read_password() {
     local prompt="$1" var="$2"
-    local pass
+    local _pw=""
     echo -ne "${CYAN}${prompt}${NC}: "
     if [[ -r /dev/tty ]]; then
-        read -rs pass < /dev/tty
+        read -rs _pw < /dev/tty
     else
-        read -rs pass
+        read -rs _pw
     fi
     echo
-    printf -v "$var" '%s' "$pass"
+    printf -v "$var" '%s' "$_pw"
 }
 
 _gui_prompt_admin_password() {
     local var="$1"
-    local pass pass2 err
+    local _pass="" _pass2="" err=""
 
     echo -e "${DIM}  Min 12 chars · upper + lower + digit + special · max 4 identical in a row${NC}"
     while true; do
-        _gui_read_password "Admin password" pass
-        _gui_read_password "Confirm password" pass2
-        [[ "$pass" == "$pass2" ]] || { error "Passwords do not match"; continue; }
-        if err=$(_gui_validate_admin_password "$pass"); then
-            printf -v "$var" '%s' "$pass"
+        _gui_read_password "Admin password" _pass
+        _gui_read_password "Confirm password" _pass2
+        [[ "$_pass" == "$_pass2" ]] || { error "Passwords do not match"; continue; }
+        if err=$(_gui_validate_admin_password "$_pass"); then
+            printf -v "$var" '%s' "$_pass"
             return 0
         fi
         error "$err"
@@ -109,7 +109,7 @@ _gui_prompt_admin_password() {
 }
 
 _gui_prompt_admin_credentials() {
-    local email pass err
+    local email="" pass="" err=""
 
     echo ""
     info "Create the GUI admin account"
@@ -138,6 +138,7 @@ _gui_resolve_admin_password() {
     fi
 
     if [[ -t 0 || -r /dev/tty ]]; then
+        local pass=""
         _gui_prompt_admin_password pass
         printf -v "$var" '%s' "$pass"
         return 0
