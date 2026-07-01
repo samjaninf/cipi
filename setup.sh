@@ -860,10 +860,13 @@ install_cipi() {
     cp cipi-install/lib/cipi-app-notify.sh /usr/local/bin/cipi-app-notify
     chmod 700 /usr/local/bin/cipi-app-notify
 
+    cp cipi-install/lib/cipi-read-app-logs.sh /usr/local/bin/cipi-read-app-logs
+    chmod 755 /usr/local/bin/cipi-read-app-logs
+
     # Templates (if any)
     cp cipi-install/templates/* /opt/cipi/templates/ 2>/dev/null || true
 
-    chown -R root:root /usr/local/bin/cipi /usr/local/bin/cipi-worker /usr/local/bin/cipi-cron-notify /usr/local/bin/cipi-auth-notify /usr/local/bin/cipi-app-notify /opt/cipi
+    chown -R root:root /usr/local/bin/cipi /usr/local/bin/cipi-worker /usr/local/bin/cipi-cron-notify /usr/local/bin/cipi-auth-notify /usr/local/bin/cipi-app-notify /usr/local/bin/cipi-read-app-logs /opt/cipi
 
     # Generate vault key for config encryption
     if [ ! -f /etc/cipi/.vault_key ]; then
@@ -909,6 +912,7 @@ www-data ALL=(root) NOPASSWD: /usr/local/bin/cipi app create *, \
                                /usr/local/bin/cipi db backup *, \
                                /usr/local/bin/cipi db restore * *, \
                                /usr/local/bin/cipi db password *, \
+                               /usr/local/bin/cipi-read-app-logs *, \
                                /bin/cat /etc/cipi/apps.json
 SUDOEOF
     chmod 440 /etc/sudoers.d/cipi-api

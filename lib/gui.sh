@@ -259,12 +259,24 @@ _gui_repair_runtime() {
     reload_php_fpm "8.5" 2>/dev/null || true
 }
 
+_gui_refresh_theme() {
+    [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && return 0
+    if ! (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan list --raw 2>/dev/null \
+        | grep -qx 'cipi:gui-refresh-theme'); then
+        return 0
+    fi
+    step "Refreshing GUI theme..."
+    (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan cipi:gui-refresh-theme) || return 1
+    return 0
+}
+
 _gui_update_package() {
     _gui_composer_vcs_repo "${CIPI_GUI_ROOT}"
     (cd "${CIPI_GUI_ROOT}" && composer update cipi/gui --no-interaction 2>/dev/null) || true
     chown -R www-data:www-data "${CIPI_GUI_ROOT}" 2>/dev/null || true
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
     (cd "${CIPI_GUI_ROOT}" && sudo -u www-data php artisan migrate --force 2>/dev/null) || true
+    _gui_refresh_theme || true
     success "cipi/gui package updated"
 }
 
@@ -431,7 +443,7 @@ gui_ssl() {
 
 gui_update() {
     [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && { error "Laravel GUI app not found."; exit 1; }
-    step "Composer update..."
+    step "Updating cipi/gui (composer, migrate, theme)..."
     _gui_update_package
     ensure_cipi_gui_permissions
     _gui_ensure_log_stack_env
@@ -440,7 +452,17 @@ gui_update() {
     _gui_create_fpm_pool
     _gui_setup_cron
     reload_php_fpm "8.5"
-    success "GUI updated"
+    success "GUI updated — hard-refresh the browser (Cmd+Shift+R)"
+}
+
+gui_refresh_theme() {
+    [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && { error "Laravel GUI app not found."; exit 1; }
+    ensure_cipi_gui_permissions
+    _gui_refresh_theme || {
+        error "cipi:gui-refresh-theme not available — run: cipi gui update"
+        exit 1
+    }
+    success "GUI theme refreshed — hard-refresh the browser (Cmd+Shift+R)"
 }
 
 gui_upgrade() {
@@ -628,6 +650,7 @@ gui_command() {
         "")
             error "Usage: cipi gui <domain>"
             echo "       cipi gui ssl | update | upgrade | status | fix-permissions | repair"
+            echo "       cipi gui refresh-theme"
             echo "       cipi gui remove [--force] | uninstall [--force]"
             echo "       cipi gui reset-user [--email=] [--password=] [--name=]"
             exit 1
@@ -637,6 +660,7 @@ gui_command() {
         upgrade) gui_upgrade ;;
         status) gui_status ;;
         fix-permissions|repair) gui_fix_permissions ;;
+        refresh-theme) gui_refresh_theme ;;
         remove|uninstall) gui_remove "$@" ;;
         reset-user|reset-password) gui_reset_user "$@" ;;
         *)
