@@ -300,6 +300,7 @@ ensure_app_logs_permissions() {
         fi
         if [[ -d "${home}/shared/storage/logs" ]]; then
             setfacl -m u:cipi:rx "${home}/shared/storage/logs" 2>/dev/null || true
+            find "${home}/shared/storage/logs" -type f -name '*.log' -exec setfacl -m u:cipi:r {} \; 2>/dev/null || true
         fi
     fi
 }
