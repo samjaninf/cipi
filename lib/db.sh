@@ -21,8 +21,9 @@ _db_create() {
     local name="${ARG_name:-}" user="${ARG_user:-}"
     [[ -z "$name" ]] && read_input "Database name" "" name
     [[ -z "$name" ]] && { error "Name required"; exit 1; }
-    [[ ! "$name" =~ ^[a-z][a-z0-9_]{1,63}$ ]] && { error "Invalid name"; exit 1; }
+    validate_db_name "$name" || { error "Invalid name"; exit 1; }
     [[ -z "$user" ]] && user="$name"
+    validate_db_name "$user" || { error "Invalid user"; exit 1; }
     local pass; pass=$(generate_password 40)
     local dbr; dbr=$(get_db_root_password)
     mariadb -u root -p"$dbr" <<SQL
@@ -59,6 +60,7 @@ _db_list() {
 
 _db_delete() {
     local name="${1:-}"; [[ -z "$name" ]] && { error "Usage: cipi db delete <name> [--force]"; exit 1; }
+    validate_db_name "$name" || { error "Invalid name"; exit 1; }
     parse_args "$@"
     # Non-interactive callers (API/UI job runner) have no TTY to answer the
     # prompt, so `confirm`'s `read` blocks forever and the job hangs. Skip the
@@ -68,6 +70,7 @@ _db_delete() {
     fi
     local dbr; dbr=$(get_db_root_password)
     local u; u=$(vault_read databases.json | jq -r --arg n "$name" '.[$n].user//$n' 2>/dev/null)
+    validate_db_name "$u" || { error "Invalid stored user for '${name}'"; exit 1; }
     mariadb -u root -p"$dbr" -e "DROP DATABASE IF EXISTS \`${name}\`; DROP USER IF EXISTS '${u}'@'localhost'; FLUSH PRIVILEGES;" 2>/dev/null
     vault_read databases.json | jq --arg n "$name" 'del(.[$n])' | vault_write databases.json
     log_action "DB DELETED: $name"
@@ -80,6 +83,7 @@ _db_delete() {
 
 _db_backup() {
     local name="${1:-}"; [[ -z "$name" ]] && { error "Usage: cipi db backup <name>"; exit 1; }
+    validate_db_name "$name" || { error "Invalid name"; exit 1; }
     local dbr; dbr=$(get_db_root_password)
     local dir="${CIPI_LOG}/backups"; mkdir -p "$dir"
     local f="${dir}/${name}_$(date +%Y%m%d_%H%M%S).sql.gz"
@@ -91,6 +95,7 @@ _db_backup() {
 _db_restore() {
     local name="${1:-}" file="${2:-}"
     [[ -z "$name" || -z "$file" ]] && { error "Usage: cipi db restore <name> <file> [--force]"; exit 1; }
+    validate_db_name "$name" || { error "Invalid name"; exit 1; }
     [[ ! -f "$file" ]] && { error "File not found: $file"; exit 1; }
     parse_args "$@"
     # Skip confirmation for non-interactive callers (API/UI job runner) — see
@@ -106,8 +111,10 @@ _db_restore() {
 
 _db_password() {
     local name="${1:-}"; [[ -z "$name" ]] && { error "Usage: cipi db password <name>"; exit 1; }
+    validate_db_name "$name" || { error "Invalid name"; exit 1; }
     local dbr; dbr=$(get_db_root_password)
     local u; u=$(vault_read databases.json | jq -r --arg n "$name" '.[$n].user//$n' 2>/dev/null)
+    validate_db_name "$u" || { error "Invalid stored user for '${name}'"; exit 1; }
     local np; np=$(generate_password 40)
     mariadb -u root -p"$dbr" -e "ALTER USER '${u}'@'localhost' IDENTIFIED BY '${np}'; FLUSH PRIVILEGES;" 2>/dev/null
     echo -e "\n${GREEN}✓${NC} New password for '${u}': ${CYAN}${np}${NC}"

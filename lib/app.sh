@@ -48,6 +48,8 @@ app_create() {
     validate_username "$app_user"  || { error "Invalid username '${app_user}'"; exit 1; }
     validate_domain "$domain"      || { error "Invalid domain '${domain}'"; exit 1; }
     validate_php_version "$php_ver" || { error "Invalid PHP version. Use: 8.3 8.4 8.5"; exit 1; }
+    [[ -n "$repository" ]] && { validate_git_repository "$repository" || { error "Invalid repository URL '${repository}'"; exit 1; }; }
+    [[ -n "$branch" ]]     && { validate_git_branch "$branch"         || { error "Invalid branch name '${branch}'"; exit 1; }; }
     php_is_installed "$php_ver"    || { error "PHP $php_ver not installed. Run: cipi php install $php_ver"; exit 1; }
     app_exists "$app_user"         && { error "App '${app_user}' already exists"; exit 1; }
     id "$app_user" &>/dev/null     && { error "User '${app_user}' already exists"; exit 1; }
@@ -605,12 +607,14 @@ app_edit() {
         app_set "$app" php "$np"; success "PHP → $np"; changed=true
     fi
     if [[ -n "${ARG_branch:-}" ]]; then
+        validate_git_branch "${ARG_branch}" || { error "Invalid branch name '${ARG_branch}'"; exit 1; }
         app_set "$app" branch "${ARG_branch}"
         local safe_branch; safe_branch=$(printf '%s' "${ARG_branch}" | sed 's/[&|\\\/]/\\&/g')
         sed -i "s|set('branch', '.*')|set('branch', '${safe_branch}')|" "/home/${app}/.deployer/deploy.php"
         success "Branch → ${ARG_branch}"; changed=true
     fi
     if [[ -n "${ARG_repository:-}" ]]; then
+        validate_git_repository "${ARG_repository}" || { error "Invalid repository URL '${ARG_repository}'"; exit 1; }
         local old_repo; old_repo=$(app_get "$app" repository)
         app_set "$app" repository "${ARG_repository}"
         local safe_repo; safe_repo=$(printf '%s' "${ARG_repository}" | sed 's/[&|\\\/]/\\&/g')

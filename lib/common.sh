@@ -103,6 +103,29 @@ validate_domain() {
     [[ "$1" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$ ]]
 }
 
+# Git branch name. Restricted to a safe charset so it can never break out of
+# the single-quoted PHP string literal it's substituted into when generating
+# deploy.php (lib/app.sh _create_deployer_config_from_template / app_edit).
+validate_git_branch() {
+    local b="$1"
+    [[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,190}$ ]] || return 1
+    [[ "$b" == *".."* ]] && return 1
+    return 0
+}
+
+# Git remote — SSH shorthand (git@host:path), ssh://, https://, or http://.
+# Same rationale as validate_git_branch: restricted charset so it can never
+# break out of the PHP string literal (or a downstream Deployer run() call).
+validate_git_repository() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._@:/-]{0,254}$ ]]
+}
+
+# Database/user identifier used in raw SQL text (mariadb -e "..."). Must never
+# contain quotes, backticks, or shell/SQL metacharacters.
+validate_db_name() {
+    [[ "$1" =~ ^[a-z][a-z0-9_]{1,63}$ ]]
+}
+
 # Installable / usable PHP versions. Restricted to 8.3+ because the bundled
 # Deployer (v8) requires PHP >= 8.3 and `dep` is invoked with the app's PHP
 # version — running it under an older interpreter would break every deploy.
