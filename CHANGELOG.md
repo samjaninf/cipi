@@ -4,6 +4,17 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.12] — 2026-07-01
+
+### Security
+
+- **SQL injection in `cipi db` commands** — `_db_delete`, `_db_backup`, `_db_restore`, and `_db_password` (**`lib/db.sh`**) interpolated the `<name>` argument (and, for delete/password, the stored `user` field) directly into `mariadb -e` statements without validation, unlike `_db_create` which already validated `name`. A crafted database name (e.g. containing a quote or backtick) could break out of the SQL string/identifier context and execute arbitrary statements as the MariaDB **root** user; `_db_create --user=` was also unvalidated, allowing the same injection at creation time. Added **`validate_db_name()`** (**`lib/common.sh`**) and applied it to `name`/`user` in every `_db_*` function, including the vault-stored `user` fallback used by delete/password.
+- **PHP code injection via `cipi app create --repository=` / `--branch=` and `cipi app edit`** — these values were substituted unsanitized into the single-quoted PHP string literals `set('repository', '...')` / `set('branch', '...')` when generating each app's **`deploy.php`** (**`lib/app.sh`**, **`lib/deployer/{laravel,custom}.php`**); the existing `sed` escaping only handled sed metacharacters, not the PHP string delimiter. A crafted branch/repository value (e.g. `x'); system('...'); //`) could break out of the string literal and inject arbitrary PHP — executed as the app's Linux user on every deploy (manual, cron, or webhook-triggered), reachable even via a REST API token scoped only to `apps-edit`. Added **`validate_git_branch()`** and **`validate_git_repository()`** (**`lib/common.sh`**, restricted charset) and enforced them in `app_create` and `app_edit` before the values are written anywhere.
+
+No migration required — both fixes are input-validation only and take effect immediately after `cipi self-update`; no existing app/database configuration needs to be regenerated.
+
+---
+
 ## [4.7.11] — 2026-07-01
 
 ### Added
