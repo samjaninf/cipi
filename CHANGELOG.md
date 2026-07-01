@@ -9,6 +9,7 @@ All notable changes to Cipi are documented in this file.
 ### Fixed
 
 - **Panel Basic Auth / Suspend failing with `sudo: a terminal is required to read the password`** — the panel runs as **`www-data`** and calls **`sudo cipi basicauth enable|disable|status`** (ability `apps-basicauth`) and **`sudo cipi app suspend|unsuspend`** (ability `apps-suspend`), but these were missing from the **`/etc/sudoers.d/cipi-api`** whitelist, so `sudo` prompted for a password and failed without a TTY. Added them to the whitelist. **Migration 4.7.6** applies the same fix on existing servers via **`cipi self-update`**.
+- **`cipi basicauth disable` refusing with `Basic auth is not enabled` while auth was still live** — when **`basic_auth`** in **`apps.json`** got reset without regenerating the vhost (Nginx kept enforcing the old **`auth_basic`** block and the htpasswd file lingered), disable relied on the flag alone and left the app stuck protected. It now also disables when the htpasswd file exists, so it always cleans up the file and regenerates the vhost.
 
 ---
 

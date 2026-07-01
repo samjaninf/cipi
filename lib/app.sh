@@ -1345,12 +1345,18 @@ basicauth_disable() {
     [[ -z "$app" ]] && { error "Usage: cipi basicauth disable <app>"; exit 1; }
     app_exists "$app" || { error "App '$app' not found"; exit 1; }
 
-    if [[ "$(app_get "$app" basic_auth)" != "true" ]]; then
+    # Treat the htpasswd file as the source of truth alongside the flag: if an
+    # earlier op (app edit / re-sync) reset basic_auth in apps.json without
+    # regenerating the vhost, Nginx keeps enforcing the old auth_basic block and
+    # the file lingers. Disabling on flag alone would then leave the app stuck
+    # protected with no way to turn it off, so also disable when the file exists.
+    local file; file=$(_basicauth_file "$app")
+    if [[ "$(app_get "$app" basic_auth)" != "true" ]] && [[ ! -f "$file" ]]; then
         info "Basic auth is not enabled for '${app}'"; return
     fi
 
     app_set "$app" basic_auth "false"
-    rm -f "$(_basicauth_file "$app")"
+    rm -f "$file"
 
     step "Updating Nginx vhost..."
     _create_nginx_vhost "$app" "$(app_get "$app" domain)" "$(app_get "$app" php)"
