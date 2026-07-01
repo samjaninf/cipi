@@ -39,7 +39,22 @@ _gui_require_package() {
 }
 
 _gui_open_basedir() {
-    echo "${CIPI_GUI_ROOT}/:/tmp/:/proc/"
+    echo "${CIPI_GUI_ROOT}/:/tmp/:/proc/:/var/tmp/"
+}
+
+# Shell cwd may point at /tmp/cipi-gui-build or /opt/cipi/gui while we rm -rf them — escape first.
+_gui_cd_safe() {
+    pwd >/dev/null 2>&1 || cd / 2>/dev/null || cd /root 2>/dev/null || true
+}
+
+_gui_new_build_dir() {
+    _gui_cd_safe
+    rm -rf /tmp/cipi-gui-build /var/tmp/cipi-gui-build.* 2>/dev/null || true
+    local dir="/var/tmp/cipi-gui-build.$$.$RANDOM"
+    while [[ -e "$dir" ]]; do
+        dir="/var/tmp/cipi-gui-build.$$.$RANDOM"
+    done
+    echo "$dir"
 }
 
 _gui_clear_host_routes() {
@@ -181,40 +196,49 @@ _gui_resolve_admin_password() {
 
 _gui_ensure_laravel_app() {
     if [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]]; then
+        _gui_cd_safe
         step "Installing Laravel GUI app..."
-        rm -rf /tmp/cipi-gui-build 2>/dev/null
+        local build_dir
+        build_dir=$(_gui_new_build_dir) || {
+            error "Failed to create GUI build directory"
+            exit 1
+        }
 
-        (cd /tmp && composer create-project laravel/laravel cipi-gui-build --no-interaction --prefer-dist 2>/dev/null) || {
+        composer create-project laravel/laravel "$build_dir" --no-interaction --prefer-dist 2>/dev/null || {
+            rm -rf "$build_dir" 2>/dev/null || true
             error "Failed to create Laravel app. Ensure composer is available."
             exit 1
         }
 
         step "Installing cipi/gui from GitHub..."
-        _gui_require_package /tmp/cipi-gui-build || {
+        _gui_require_package "$build_dir" || {
+            rm -rf "$build_dir" 2>/dev/null || true
             error "Failed to install cipi/gui from ${CIPI_GUI_REPO}"
             exit 1
         }
 
-        sed -i "s|^APP_ENV=.*|APP_ENV=production|" /tmp/cipi-gui-build/.env
-        sed -i "s|^APP_DEBUG=.*|APP_DEBUG=false|" /tmp/cipi-gui-build/.env
-        sed -i "s|^SESSION_DRIVER=.*|SESSION_DRIVER=file|" /tmp/cipi-gui-build/.env
+        sed -i "s|^APP_ENV=.*|APP_ENV=production|" "${build_dir}/.env"
+        sed -i "s|^APP_DEBUG=.*|APP_DEBUG=false|" "${build_dir}/.env"
+        sed -i "s|^SESSION_DRIVER=.*|SESSION_DRIVER=file|" "${build_dir}/.env"
 
-        _gui_clear_host_routes /tmp/cipi-gui-build
+        _gui_clear_host_routes "$build_dir"
 
-        (cd /tmp/cipi-gui-build && php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
-        (cd /tmp/cipi-gui-build && php artisan key:generate --force 2>/dev/null) || true
-        (cd /tmp/cipi-gui-build && php artisan migrate --force 2>/dev/null) || true
+        (cd "$build_dir" && php artisan vendor:publish --tag=cipi-gui-config --force 2>/dev/null) || true
+        (cd "$build_dir" && php artisan key:generate --force 2>/dev/null) || true
+        (cd "$build_dir" && php artisan migrate --force 2>/dev/null) || true
 
         local seed_cmd=(php artisan cipi:seed-gui-user)
         [[ -n "${_GUI_ADMIN_EMAIL:-}" ]] && seed_cmd+=(--email="${_GUI_ADMIN_EMAIL}")
         [[ -n "${_GUI_ADMIN_PASSWORD:-}" ]] && seed_cmd+=(--password="${_GUI_ADMIN_PASSWORD}")
-        (cd /tmp/cipi-gui-build && "${seed_cmd[@]}") || {
+        (cd "$build_dir" && "${seed_cmd[@]}") || {
+            rm -rf "$build_dir" 2>/dev/null || true
             error "Failed to create GUI admin user"
             exit 1
         }
 
+        _gui_cd_safe
         rm -rf "${CIPI_GUI_ROOT}" 2>/dev/null
-        mv /tmp/cipi-gui-build "${CIPI_GUI_ROOT}"
+        mv "$build_dir" "${CIPI_GUI_ROOT}"
         chown -R www-data:www-data "${CIPI_GUI_ROOT}"
         success "Laravel GUI app + cipi/gui package"
     else
@@ -333,6 +357,8 @@ gui_setup() {
     [[ -z "$domain" ]] && { error "Usage: cipi gui <domain>"; exit 1; }
     validate_domain "$domain" || { error "Invalid domain '${domain}'"; exit 1; }
 
+    _gui_cd_safe
+
     echo ""; info "Configuring Cipi GUI at ${domain}..."; echo ""
 
     mkdir -p "${CIPI_CONFIG}"
@@ -421,30 +447,39 @@ gui_upgrade() {
     [[ ! -f "${CIPI_GUI_CONFIG}" ]] && { error "GUI not configured."; exit 1; }
     [[ ! -f "${CIPI_GUI_ROOT}/artisan" ]] && { error "Laravel GUI app not found."; exit 1; }
 
-    local backup_dir="/tmp/cipi-gui-backup-$(date +%s)"
+    _gui_cd_safe
+
+    local backup_dir="/var/tmp/cipi-gui-backup-$(date +%s)"
+    local build_dir
     mkdir -p "$backup_dir"
     [[ -f "${CIPI_GUI_ROOT}/.env" ]] && cp "${CIPI_GUI_ROOT}/.env" "${backup_dir}/.env"
     [[ -f "${CIPI_GUI_ROOT}/database/database.sqlite" ]] && cp "${CIPI_GUI_ROOT}/database/database.sqlite" "${backup_dir}/database.sqlite"
 
-    rm -rf /tmp/cipi-gui-build 2>/dev/null
-    (cd /tmp && composer create-project laravel/laravel cipi-gui-build --no-interaction --prefer-dist) || exit 1
+    build_dir=$(_gui_new_build_dir) || exit 1
+    composer create-project laravel/laravel "$build_dir" --no-interaction --prefer-dist || {
+        rm -rf "$build_dir" 2>/dev/null || true
+        exit 1
+    }
 
     step "Installing cipi/gui from GitHub..."
-    _gui_require_package /tmp/cipi-gui-build || {
+    _gui_require_package "$build_dir" || {
+        rm -rf "$build_dir" >/dev/null || true
         error "Failed to install cipi/gui from ${CIPI_GUI_REPO}"
         exit 1
     }
 
-    [[ -f "${backup_dir}/.env" ]] && cp "${backup_dir}/.env" /tmp/cipi-gui-build/.env
-    [[ -f "${backup_dir}/database.sqlite" ]] && cp "${backup_dir}/database.sqlite" /tmp/cipi-gui-build/database/database.sqlite
+    [[ -f "${backup_dir}/.env" ]] && cp "${backup_dir}/.env" "${build_dir}/.env"
+    [[ -f "${backup_dir}/database.sqlite" ]] && cp "${backup_dir}/database.sqlite" "${build_dir}/database/database.sqlite"
 
-    _gui_clear_host_routes /tmp/cipi-gui-build
-    (cd /tmp/cipi-gui-build && php artisan vendor:publish --tag=cipi-gui-config --force)
-    (cd /tmp/cipi-gui-build && php artisan migrate --force)
+    _gui_clear_host_routes "$build_dir"
+    (cd "$build_dir" && php artisan vendor:publish --tag=cipi-gui-config --force)
+    (cd "$build_dir" && php artisan migrate --force)
 
+    _gui_cd_safe
     rm -rf "${CIPI_GUI_ROOT}.old" 2>/dev/null
     mv "${CIPI_GUI_ROOT}" "${CIPI_GUI_ROOT}.old" 2>/dev/null || true
-    mv /tmp/cipi-gui-build "${CIPI_GUI_ROOT}"
+    mv "$build_dir" "${CIPI_GUI_ROOT}"
+    rm -rf "$backup_dir" 2>/dev/null || true
     chown -R www-data:www-data "${CIPI_GUI_ROOT}"
     ensure_cipi_gui_permissions
     reload_php_fpm "8.5"
@@ -510,7 +545,7 @@ gui_remove() {
     fi
 
     step "Application..."
-    rm -rf "${CIPI_GUI_ROOT}" "${CIPI_GUI_ROOT}.old" /tmp/cipi-gui-build 2>/dev/null || true
+    rm -rf "${CIPI_GUI_ROOT}" "${CIPI_GUI_ROOT}.old" /tmp/cipi-gui-build /var/tmp/cipi-gui-build.* 2>/dev/null || true
 
     step "Config..."
     rm -f "${CIPI_GUI_CONFIG}" 2>/dev/null || true

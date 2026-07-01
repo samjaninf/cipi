@@ -17,6 +17,7 @@ All notable changes to Cipi are documented in this file.
 ### Fixed
 
 - **`cipi gui reset-user`** — fixes login failing after reset (**`These credentials do not match our records`**) caused by **double password hashing** (Laravel 12 **`hashed`** cast + **`Hash::make()`** in **`cipi/gui`**'s **`--reset`**). Always resets via **`lib/gui-reset-admin.php`** (plain password + session purge). Payload written under **`storage/app/`** as **`www-data`**.
+- **`cipi gui` / `gui upgrade` install** — fixes **`getcwd: cannot access parent directories`** when the shell cwd was inside **`/tmp/cipi-gui-build`** or **`/opt/cipi/gui`** during **`rm -rf`**. Build dir moved to **`/var/tmp/cipi-gui-build.*`** with **`_gui_cd_safe`** before destructive ops; **`open_basedir`** includes **`/var/tmp/`**.
 
 ---
 
