@@ -4,6 +4,46 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.10] — 2026-07-01
+
+### Added
+
+- **`cipi app logs read <app>`** — paginated log snapshot for the panel API (**`GET /api/apps/{name}/logs`**) with **`--type=`**, **`--page=`**, **`--per-page=`**; emits **`===CIPI_LOG_FILE:…===`** markers. Wired as **`cipi app logs read`** subcommand (distinct from interactive **`cipi app logs`** tail).
+
+### Fixed
+
+- **GUI log viewer still empty for Laravel logs on servers that already ran migration 4.7.8** — **`open_basedir`** on the API PHP pool blocks reads under **`/home/*`**, so log content must be fetched via **`sudo cipi app logs read`**. **Migration 4.7.10** ensures **`/etc/sudoers.d/cipi-api`** whitelists that command (and **`cipi-read-app-logs`**) on existing servers.
+
+---
+
+## [4.7.9] — 2026-07-01
+
+### Fixed
+
+- **Panel API still could not read Laravel log files after 4.7.8** — traverse ACLs on **`shared/storage/logs`** were not enough when log files are **`app:app` 664**. **`ensure_app_logs_permissions`** now grants **`u:cipi:r`** on each **`*.log`** file (and clears stale ACLs first). **Migration 4.7.9** retrofits all known apps on **`cipi self-update`**.
+
+---
+
+## [4.7.8] — 2026-07-01
+
+### Added
+
+- **`/usr/local/bin/cipi-read-app-logs`** — root helper for paginated tail/head of app log globs under **`/home/*/logs/`** and **`/home/*/shared/storage/logs/`** (path-validated; used by the panel API via sudo).
+
+### Fixed
+
+- **GUI log viewer could not read files under `/home/*` from the API** — first sudoers pass for **`www-data`**: **`cipi-read-app-logs *`** plus suspend/basicauth entries from 4.7.6. **Migration 4.7.8** installs the helper and rewrites **`/etc/sudoers.d/cipi-api`** on existing servers.
+
+---
+
+## [4.7.7] — 2026-07-01
+
+### Fixed
+
+- **GUI apps list always showed “Suspend” / wrong Basic Auth state** — **`apps-public.json`** (API read model for **`GET /apps`**) omitted **`suspended`** and **`basic_auth`** from the projection even though they live in **`apps.json`**. **`_update_apps_public`** now includes both flags. **Migration 4.7.7** regenerates **`apps-public.json`** on **`cipi self-update`**.
+
+---
+
 ## [4.7.6] — 2026-07-01
 
 ### Fixed
