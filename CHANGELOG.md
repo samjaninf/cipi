@@ -4,6 +4,117 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.11] — 2026-07-01
+
+### Added
+
+- **Setup post-install guide** — after the credentials summary, **`setup.sh`** now prints a short step-by-step guide for the optional **Panel API** (`cipi api <domain>` → `cipi api ssl` → `cipi api token create`) and **Web GUI** (`cipi gui <domain>` → `cipi gui ssl`), including DNS hints and what each layer does.
+
+---
+
+## [4.7.10] — 2026-07-01
+
+### Added
+
+- **`cipi app logs read <app>`** — paginated log snapshot for the panel API (**`GET /api/apps/{name}/logs`**) with **`--type=`**, **`--page=`**, **`--per-page=`**; emits **`===CIPI_LOG_FILE:…===`** markers. Wired as **`cipi app logs read`** subcommand (distinct from interactive **`cipi app logs`** tail).
+
+### Fixed
+
+- **GUI log viewer still empty for Laravel logs on servers that already ran migration 4.7.8** — **`open_basedir`** on the API PHP pool blocks reads under **`/home/*`**, so log content must be fetched via **`sudo cipi app logs read`**. **Migration 4.7.10** ensures **`/etc/sudoers.d/cipi-api`** whitelists that command (and **`cipi-read-app-logs`**) on existing servers.
+
+---
+
+## [4.7.9] — 2026-07-01
+
+### Fixed
+
+- **Panel API still could not read Laravel log files after 4.7.8** — traverse ACLs on **`shared/storage/logs`** were not enough when log files are **`app:app` 664**. **`ensure_app_logs_permissions`** now grants **`u:cipi:r`** on each **`*.log`** file (and clears stale ACLs first). **Migration 4.7.9** retrofits all known apps on **`cipi self-update`**.
+
+---
+
+## [4.7.8] — 2026-07-01
+
+### Added
+
+- **`/usr/local/bin/cipi-read-app-logs`** — root helper for paginated tail/head of app log globs under **`/home/*/logs/`** and **`/home/*/shared/storage/logs/`** (path-validated; used by the panel API via sudo).
+
+### Fixed
+
+- **GUI log viewer could not read files under `/home/*` from the API** — first sudoers pass for **`www-data`**: **`cipi-read-app-logs *`** plus suspend/basicauth entries from 4.7.6. **Migration 4.7.8** installs the helper and rewrites **`/etc/sudoers.d/cipi-api`** on existing servers.
+
+---
+
+## [4.7.7] — 2026-07-01
+
+### Fixed
+
+- **GUI apps list always showed “Suspend” / wrong Basic Auth state** — **`apps-public.json`** (API read model for **`GET /apps`**) omitted **`suspended`** and **`basic_auth`** from the projection even though they live in **`apps.json`**. **`_update_apps_public`** now includes both flags. **Migration 4.7.7** regenerates **`apps-public.json`** on **`cipi self-update`**.
+
+---
+
+## [4.7.6] — 2026-07-01
+
+### Fixed
+
+- **Panel Basic Auth / Suspend failing with `sudo: a terminal is required to read the password`** — the panel runs as **`www-data`** and calls **`sudo cipi basicauth enable|disable|status`** (ability `apps-basicauth`) and **`sudo cipi app suspend|unsuspend`** (ability `apps-suspend`), but these were missing from the **`/etc/sudoers.d/cipi-api`** whitelist, so `sudo` prompted for a password and failed without a TTY. Added them to the whitelist. **Migration 4.7.6** applies the same fix on existing servers via **`cipi self-update`**.
+- **`cipi basicauth disable` refusing with `Basic auth is not enabled` while auth was still live** — when **`basic_auth`** in **`apps.json`** got reset without regenerating the vhost (Nginx kept enforcing the old **`auth_basic`** block and the htpasswd file lingered), disable relied on the flag alone and left the app stuck protected. It now also disables when the htpasswd file exists, so it always cleans up the file and regenerates the vhost.
+- **Panel DB delete / restore and deploy rollback hanging on a `[y/N]` prompt** — **`cipi db delete`**, **`cipi db restore`** and **`cipi deploy --rollback`** always called **`confirm`**, whose blocking **`read`** never returns under the API/UI job runner (no TTY), so the job hung forever showing `Delete database 'x'? [y/N]:`. They now skip confirmation when **`--force`** is passed **or** stdin is not a terminal (matching **`cipi app delete --force`**).
+
+---
+
+## [4.7.5] — 2026-07-01
+
+### Changed
+
+- **GUI package source** — **`cipi gui`** now installs and updates **`cipi/gui`** from **[GitHub](https://github.com/cipi-sh/gui)** via Composer VCS (`dev-main`). The **`cipi-gui/`** directory was removed from this repo (GUI lives in its own repository). PHP-FPM **`open_basedir`** is simplified to **`/opt/cipi/gui/`** only. **Migration 4.7.5** migrates existing servers and removes the legacy **`/opt/cipi/cipi-gui`** bundle.
+- **`cipi gui update`** — now runs **`composer update cipi/gui`**, **`migrate --force`**, and **`cipi:gui-refresh-theme`** (when available). New subcommand **`cipi gui refresh-theme`** for theme-only reloads.
+
+### Added
+
+- **`cipi gui remove`** — uninstall the web control panel when configured (Nginx, FPM, cron, SSL, Laravel app, vault config). Alias **`uninstall`**; **`--force`** skips confirmation.
+
+### Fixed
+
+- **`cipi gui reset-user`** — fixes login failing after reset (**`These credentials do not match our records`**) caused by **double password hashing** (Laravel 12 **`hashed`** cast + **`Hash::make()`** in **`cipi/gui`**'s **`--reset`**). Always resets via **`lib/gui-reset-admin.php`** (plain password + session purge). Payload written under **`storage/app/`** as **`www-data`**.
+- **`cipi gui` / `gui upgrade` install** — fixes **`getcwd: cannot access parent directories`** when the shell cwd was inside **`/tmp/cipi-gui-build`** or **`/opt/cipi/gui`** during **`rm -rf`**. Build dir moved to **`/var/tmp/cipi-gui-build.*`** with **`_gui_cd_safe`** before destructive ops; **`open_basedir`** includes **`/var/tmp/`**.
+
+---
+
+## [4.7.3] — 2026-06-30
+
+### Fixed
+
+- **GUI `open_basedir` still blocking `/opt/cipi/cipi-gui/` on existing servers** — **`cipi gui fix-permissions`** now runs a full **`_gui_repair_runtime`**: copies **`cipi/gui`** into **`vendor/`** (`symlink: false` + `composer reinstall`), rewrites the FPM pool with **`/opt/cipi/cipi-gui/`** in **`open_basedir`**, and clears caches. **Migration 4.7.3** applies the same repair on **`cipi self-update`**.
+- **GUI app detail 500 (`Undefined variable $name`)** — **`AppDetail::mount()`** now accepts the **`{name}`** route parameter (`mount(string $name)`).
+
+---
+
+## [4.7.2] — 2026-06-30
+
+### Fixed
+
+- **GUI giant icons / broken layout** — the inline CSS subset was missing size utilities used in Blade (`h-9`, `h-12`, `h-16`, `mx-auto`, `text-surface-600`, `bg-surface-900/50`, …); SVGs without matching rules rendered at full browser default size. Added the missing utilities plus safe SVG defaults in **`cipi/gui`** `partials/styles.blade.php`.
+- **GUI Livewire / Alpine JS conflicts** — **`layouts/app.blade.php`** loaded Alpine from jsDelivr on top of Livewire 3’s bundled Alpine, breaking `wire:click`, polling, and `x-data` toasts. Removed the duplicate script tag.
+- **GUI HTTPS / Livewire** — Nginx vhost now passes **`HTTP_X_FORWARDED_PROTO`** and **`HTTPS`** to PHP-FPM so Laravel generates correct URLs behind TLS. **Migration 4.7.2** patches existing vhosts in place (preserves certbot SSL blocks) and updates **`cipi/gui`**.
+
+---
+
+## [4.7.1] — 2026-06-30
+
+### Fixed
+
+- **GUI HTTP 500 (`open_basedir` / `CipiGuiServiceProvider`)** — the `cipi-gui` PHP-FPM pool allowed only `/opt/cipi/gui/`, but Composer's path repository symlinked `cipi/gui` from `/opt/cipi/cipi-gui/`, so autoload failed at runtime. **`lib/gui.sh`** now sets **`open_basedir`** to include **`/opt/cipi/cipi-gui/`**, configures the path repo with **`symlink: false`** (package copied into `vendor/`), and refreshes the FPM pool on **`cipi gui update`** / **`fix-permissions`**. **Migration 4.7.1** retrofits existing servers.
+
+---
+
+## [4.7.0] — 2026-06-30
+
+### Added
+
+- **`cipi gui`** — optional web control panel for managing one or more Cipi servers via the REST API ([cipi/gui](https://github.com/cipi-sh/gui)). **`cipi gui <domain>`** provisions a Laravel host at **`/opt/cipi/gui`** (dedicated PHP-FPM pool, Nginx vhost, scheduler cron), **prompts interactively for admin email and password** (password policy: min **12** chars, upper + lower + digit + special, max **4** identical chars in a row), and stores config in **`/etc/cipi/gui.json`**. Subcommands: **`ssl`**, **`update`** (soft `composer update`), **`upgrade`** (full rebuild), **`status`**, **`fix-permissions`**, **`reset-user`** (rewrite admin email/name/password and clear 2FA; same password policy; alias **`reset-password`**). Session login with optional TOTP 2FA; no local queue worker — remote async jobs are polled via the managed servers' **`cipi api`**. The **`cipi/gui`** Composer package is bundled at **`/opt/cipi/cipi-gui`** (same model as **`cipi-api`**). Requires **`cipi api`** enabled on each managed server with a token covering the full ability set.
+
+---
+
 ## [4.6.7] — 2026-06-10
 
 ### Fixed

@@ -122,6 +122,21 @@ show_help() {
     echo -e "    ${CYAN}cipi api token list|create|revoke${NC} API token management"
     echo -e "    ${CYAN}cipi api fix-permissions${NC}            Fix panel API file ownership (SQLite/logs)"
     echo ""
+    echo -e "  ${BOLD}${CYAN}GUI${NC}"
+    echo -e "    ${CYAN}cipi gui <domain>${NC}                 Configure web control panel"
+    echo -e "    ${CYAN}cipi gui ssl${NC}                      SSL for GUI domain"
+    echo -e "    ${CYAN}cipi gui update${NC}                   Update cipi/gui, migrate, refresh theme"
+    echo -e "    ${CYAN}cipi gui refresh-theme${NC}            Reload GUI CSS/views from package (alias: artisan cipi:gui-refresh-theme)"
+    echo -e "    ${CYAN}cipi gui upgrade${NC}                  Full rebuild (fresh Laravel + package)"
+    echo -e "    ${CYAN}cipi gui status${NC}                   Show GUI versions and status"
+    echo -e "    ${CYAN}cipi gui fix-permissions${NC}            Repair GUI (open_basedir, vendor copy, permissions)"
+    echo -e "    ${CYAN}cipi gui repair${NC}                     Alias for fix-permissions"
+    echo -e "    ${CYAN}cipi gui reset-user${NC}                 Reset admin email/password (clears 2FA)"
+    echo -e "    ${CYAN}cipi gui remove${NC}                     Remove GUI panel (alias: uninstall)"
+    echo -e "    ${DIM}  reset-user flags: --email= --password= --name=${NC}"
+    echo -e "    ${DIM}  remove flags: --force${NC}"
+    echo -e "    ${DIM}  Requires cipi api on managed servers + API tokens${NC}"
+    echo ""
     echo -e "  ${BOLD}${CYAN}GIT INTEGRATION${NC}"
     echo -e "    ${CYAN}cipi git status${NC}                      Git provider status"
     echo -e "    ${CYAN}cipi git github-token <token>${NC}        Save GitHub PAT"
@@ -245,6 +260,7 @@ main() {
         self-update) require_root; source "${CIPI_LIB}/self-update.sh"; selfupdate_command "$@" ;;
         service)    require_root; source "${CIPI_LIB}/service.sh";    service_command "$@" ;;
         api)        require_root; source "${CIPI_LIB}/api.sh";       api_command "$@" ;;
+        gui)        require_root; source "${CIPI_LIB}/gui.sh";       gui_command "$@" ;;
         git)        require_root; source "${CIPI_LIB}/git.sh";       git_command "$@" ;;
         sync)       require_root; source "${CIPI_LIB}/sync.sh";      sync_command "$@" ;;
         ssh)        require_root; source "${CIPI_LIB}/ssh.sh";       ssh_command "$@" ;;

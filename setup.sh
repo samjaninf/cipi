@@ -22,6 +22,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+DIM='\033[2m'
 NC='\033[0m'
 BOLD='\033[1m'
 
@@ -828,6 +829,8 @@ install_cipi() {
     # Lib scripts
     cp cipi-install/lib/*.sh /opt/cipi/lib/
     chmod 700 /opt/cipi/lib/*.sh
+    cp cipi-install/lib/gui-reset-admin.php /opt/cipi/lib/ 2>/dev/null || true
+    chmod 644 /opt/cipi/lib/gui-reset-admin.php 2>/dev/null || true
 
     # Deployer templates (per app type: laravel, custom)
     if [ -d "cipi-install/lib/deployer" ]; then
@@ -839,6 +842,8 @@ install_cipi() {
         rm -rf /opt/cipi/cipi-api 2>/dev/null
         cp -a cipi-install/cipi-api /opt/cipi/cipi-api
     fi
+
+    # Cipi GUI is installed via Composer from https://github.com/cipi-sh/gui (cipi gui)
 
     # Worker helper
     cp cipi-install/lib/cipi-worker.sh /usr/local/bin/cipi-worker
@@ -856,10 +861,13 @@ install_cipi() {
     cp cipi-install/lib/cipi-app-notify.sh /usr/local/bin/cipi-app-notify
     chmod 700 /usr/local/bin/cipi-app-notify
 
+    cp cipi-install/lib/cipi-read-app-logs.sh /usr/local/bin/cipi-read-app-logs
+    chmod 755 /usr/local/bin/cipi-read-app-logs
+
     # Templates (if any)
     cp cipi-install/templates/* /opt/cipi/templates/ 2>/dev/null || true
 
-    chown -R root:root /usr/local/bin/cipi /usr/local/bin/cipi-worker /usr/local/bin/cipi-cron-notify /usr/local/bin/cipi-auth-notify /usr/local/bin/cipi-app-notify /opt/cipi
+    chown -R root:root /usr/local/bin/cipi /usr/local/bin/cipi-worker /usr/local/bin/cipi-cron-notify /usr/local/bin/cipi-auth-notify /usr/local/bin/cipi-app-notify /usr/local/bin/cipi-read-app-logs /opt/cipi
 
     # Generate vault key for config encryption
     if [ ! -f /etc/cipi/.vault_key ]; then
@@ -890,6 +898,12 @@ install_cipi() {
 www-data ALL=(root) NOPASSWD: /usr/local/bin/cipi app create *, \
                                /usr/local/bin/cipi app edit *, \
                                /usr/local/bin/cipi app delete *, \
+                               /usr/local/bin/cipi app logs read *, \
+                               /usr/local/bin/cipi app suspend *, \
+                               /usr/local/bin/cipi app unsuspend *, \
+                               /usr/local/bin/cipi basicauth enable *, \
+                               /usr/local/bin/cipi basicauth disable *, \
+                               /usr/local/bin/cipi basicauth status *, \
                                /usr/local/bin/cipi deploy *, \
                                /usr/local/bin/cipi alias add *, \
                                /usr/local/bin/cipi alias remove *, \
@@ -900,6 +914,7 @@ www-data ALL=(root) NOPASSWD: /usr/local/bin/cipi app create *, \
                                /usr/local/bin/cipi db backup *, \
                                /usr/local/bin/cipi db restore * *, \
                                /usr/local/bin/cipi db password *, \
+                               /usr/local/bin/cipi-read-app-logs *, \
                                /bin/cat /etc/cipi/apps.json
 SUDOEOF
     chmod 440 /etc/sudoers.d/cipi-api
@@ -1136,7 +1151,41 @@ final_summary() {
     echo -e "  All commands:   ${CYAN}cipi help${NC}"
     echo -e "  Create app:     ${CYAN}cipi app create${NC}"
     echo ""
+    _final_summary_panel_guide "$SERVER_IP"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# Post-setup guide: optional Panel API and Web GUI (same server or remote).
+_final_summary_panel_guide() {
+    local server_ip="${1:-}"
+
+    echo -e "  ${BOLD}Optional — Panel API & Web GUI${NC}"
+    echo -e "  ${DIM}Manage apps from a browser instead of SSH. Two optional layers:${NC}"
+    echo -e "  ${DIM}  • Panel API  — REST endpoints + tokens for scripts and the GUI${NC}"
+    echo -e "  ${DIM}  • Web GUI    — multi-server control panel (needs API on each server)${NC}"
+    echo ""
+    echo -e "  ${BOLD}1. Panel API${NC} ${DIM}(install first — ~2 min)${NC}"
+    echo -e "  Point a DNS A record to ${CYAN}${server_ip}${NC}, then run:"
+    echo -e "    ${CYAN}cipi api api.yourdomain.com${NC}"
+    echo -e "  ${DIM}Provisions Laravel, PHP-FPM, Nginx and a queue worker automatically.${NC}"
+    echo ""
+    echo -e "  ${BOLD}2. HTTPS for the API${NC}"
+    echo -e "    ${CYAN}cipi api ssl${NC}"
+    echo ""
+    echo -e "  ${BOLD}3. API token${NC} ${DIM}(for the GUI, CI, or cipi-cli)${NC}"
+    echo -e "    ${CYAN}cipi api token create${NC}"
+    echo -e "  ${DIM}Pick abilities from the menu; save the token — it is shown once.${NC}"
+    echo ""
+    echo -e "  ${BOLD}4. Web GUI${NC} ${DIM}(optional — same server or another machine)${NC}"
+    echo -e "  Point another DNS name to the GUI host, then:"
+    echo -e "    ${CYAN}cipi gui panel.yourdomain.com${NC}"
+    echo -e "  ${DIM}Prompts for admin email/password; registers servers with API tokens.${NC}"
+    echo ""
+    echo -e "  ${BOLD}5. HTTPS for the GUI${NC}"
+    echo -e "    ${CYAN}cipi gui ssl${NC}"
+    echo ""
+    echo -e "  ${DIM}After API setup: https://api.yourdomain.com/docs · GUI repo: https://github.com/cipi-sh/gui${NC}"
     echo ""
 }
 
