@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.13] — 2026-07-03
+
+### Added
+
+- **Weekly PHP security patch check** — PHP packages are excluded from `unattended-upgrades` (managed by Cipi). **`cipi php upgrade`** runs **`apt-get update`** and **`--only-upgrade`** on all installed **`php*`** / **`libphp*`** packages, restarts affected PHP-FPM pools, and emails when upgrades were applied (**`php_upgrade`** trigger). Root crontab: **Sunday 03:30** via **`cipi-cron-notify`**. Log: **`/var/log/cipi/php-upgrade.log`**. **Migration 4.7.13** adds the cron on existing servers and runs the check immediately (2026-07 PHP 8.x security release).
+
+---
+
 ## [4.7.12] — 2026-07-01
 
 ### Security

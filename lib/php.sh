@@ -11,9 +11,82 @@ php_command() {
         install) _php_install "$@" ;;
         remove)  _php_remove "$@" ;;
         switch)  _php_switch "$@" ;;
+        upgrade) _php_upgrade "$@" ;;
         list|ls) _php_list ;;
-        *) error "Use: install remove switch list"; exit 1 ;;
+        *) error "Use: install remove switch upgrade list"; exit 1 ;;
     esac
+}
+
+# Weekly cron + migration hook — idempotent root crontab entry.
+_php_setup_upgrade_cron() {
+    [[ "${EUID:-$(id -u)}" -ne 0 ]] && return 0
+    if crontab -l 2>/dev/null | grep -qF 'cipi php upgrade'; then
+        return 0
+    fi
+    if ! crontab -l 2>/dev/null | grep -q "CIPI CRON"; then
+        return 0
+    fi
+    {
+        crontab -l 2>/dev/null
+        echo "# PHP security patch check (Sunday 3:30 AM)"
+        echo '30 3 * * 0 /usr/local/bin/cipi-cron-notify php-upgrade /usr/local/bin/cipi php upgrade >> /var/log/cipi/php-upgrade.log 2>&1'
+    } | crontab -
+}
+
+_php_upgrade() {
+    local LOCK=/run/cipi-php-upgrade.lock apt_opts='-o DPkg::Lock::Timeout=300'
+    exec 9>"$LOCK"
+    if ! flock -n 9; then
+        info "PHP upgrade check already running — skip"
+        return 0
+    fi
+
+    local has_php=false v
+    for v in 7.4 8.0 8.1 8.2 8.3 8.4 8.5; do
+        if php_is_installed "$v"; then
+            has_php=true
+            break
+        fi
+    done
+    [[ "$has_php" == false ]] && { info "No PHP installed — skip"; return 0; }
+
+    local -a installed=()
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] && installed+=("$pkg")
+    done < <(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E '^(php[0-9]|php-|libphp)' || true)
+    [[ ${#installed[@]} -eq 0 ]] && { info "No PHP packages found — skip"; return 0; }
+
+    step "Checking for PHP package upgrades..."
+    apt-get $apt_opts update -qq
+
+    local out rc upgraded
+    out=$(DEBIAN_FRONTEND=noninteractive apt-get $apt_opts install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        --only-upgrade "${installed[@]}" 2>&1) || rc=$?
+    rc=${rc:-0}
+    echo "$out"
+
+    upgraded=$(echo "$out" | grep -oE '^[0-9]+ upgraded' | grep -oE '^[0-9]+' | head -1)
+    upgraded=${upgraded:-0}
+
+    if [[ "$upgraded" -eq 0 ]]; then
+        info "PHP packages are up to date"
+        return 0
+    fi
+
+    step "Restarting PHP-FPM services..."
+    for v in 7.4 8.0 8.1 8.2 8.3 8.4 8.5; do
+        php_is_installed "$v" && reload_php_fpm "$v" 2>/dev/null || true
+    done
+
+    log_action "PHP UPGRADE: ${upgraded} package(s)"
+    cipi_notify \
+        "Cipi PHP upgraded on $(hostname)" \
+        "Installed PHP packages were upgraded.\n\nServer: $(hostname)\nPackages upgraded: ${upgraded}\nTime: $(date '+%Y-%m-%d %H:%M:%S %Z')" \
+        php_upgrade
+    success "PHP packages upgraded (${upgraded})"
+    return "$rc"
 }
 
 _php_install() {
