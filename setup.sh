@@ -997,6 +997,8 @@ AUEOF
 # === CIPI CRON JOBS ===
 # Cipi self-update (daily 3:50 AM)
 50 3 * * * /usr/local/bin/cipi-cron-notify self-update /usr/local/bin/cipi self-update >> /var/log/cipi/cipi.log 2>&1
+# PHP security patch check (Sunday 3:30 AM)
+30 3 * * 0 /usr/local/bin/cipi-cron-notify php-upgrade /usr/local/bin/cipi php upgrade >> /var/log/cipi/php-upgrade.log 2>&1
 # SSL renewal (Sunday 4 AM)
 10 4 * * 0 /usr/local/bin/cipi-cron-notify ssl-renew certbot renew --nginx --non-interactive --post-hook "systemctl reload nginx" >> /var/log/cipi/certbot.log 2>&1
 # Security updates — unattended-upgrades handles this daily via APT::Periodic

@@ -167,6 +167,7 @@ show_help() {
     echo -e "    ${CYAN}cipi php list${NC}                       PHP versions"
     echo -e "    ${CYAN}cipi php install <ver>${NC}               Install PHP"
     echo -e "    ${CYAN}cipi php switch <ver>${NC}                Switch system default PHP"
+    echo -e "    ${CYAN}cipi php upgrade${NC}                    Upgrade installed PHP packages"
     echo -e "    ${CYAN}cipi firewall allow <port>${NC}          Allow port"
     echo -e "    ${CYAN}cipi firewall list${NC}                  Firewall rules"
     echo -e "    ${CYAN}cipi ban list${NC}                       List banned IPs"

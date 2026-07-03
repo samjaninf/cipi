@@ -31,6 +31,7 @@ ssl_renew|SSL|SSL certificates renewed
 php_install|PHP|PHP version installed
 php_switch|PHP|System PHP switched
 php_remove|PHP|PHP version removed
+php_upgrade|PHP|PHP packages upgraded
 db_create|Database|Database created
 db_delete|Database|Database deleted
 worker_add|Workers|Worker added
