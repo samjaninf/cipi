@@ -48,6 +48,23 @@ _ensure_awscli() {
     fi
 }
 
+# Disk-backed temp dir for archives (default /var/tmp). /tmp is often tmpfs and too small for large apps.
+# Override: CIPI_BACKUP_TMPDIR env, or backup.json "tmpdir".
+_bk_tmp_base() {
+    local dir=""
+    if [[ -n "${CIPI_BACKUP_TMPDIR:-}" ]]; then
+        dir="$CIPI_BACKUP_TMPDIR"
+    elif [[ -f "${CIPI_CONFIG}/backup.json" ]]; then
+        dir=$(vault_read backup.json | jq -r '.tmpdir // ""')
+    fi
+    dir="${dir:-/var/tmp}"
+    if [[ ! -d "$dir" ]] || [[ ! -w "$dir" ]]; then
+        error "Backup temp directory not writable: ${dir}"
+        exit 1
+    fi
+    echo "$dir"
+}
+
 # Wrapper: adds --endpoint-url and --region when a custom endpoint is configured.
 # S3-compatible APIs can fail with "NoneType is not iterable" if region is empty.
 _aws_s3() {
@@ -67,7 +84,7 @@ _aws_s3() {
 _bk_configure() {
     _ensure_awscli
     local cf="${CIPI_CONFIG}/backup.json"
-    local ck="" cs="" cb="" cr="" ce=""
+    local ck="" cs="" cb="" cr="" ce="" ct="/var/tmp"
     if [[ -f "$cf" ]]; then
         local _bkj; _bkj=$(vault_read backup.json)
         ck=$(echo "$_bkj" | jq -r '.aws_key    // ""')
@@ -75,6 +92,7 @@ _bk_configure() {
         cb=$(echo "$_bkj" | jq -r '.bucket     // ""')
         cr=$(echo "$_bkj" | jq -r '.region     // ""')
         ce=$(echo "$_bkj" | jq -r '.endpoint_url // ""')
+        ct=$(echo "$_bkj" | jq -r '.tmpdir // "/var/tmp"')
     fi
 
     read_input "Access Key ID" "$ck" ck
@@ -88,14 +106,17 @@ _bk_configure() {
     echo -e "  ${DIM}  Backblaze:  https://s3.<region>.backblazeb2.com${NC}"
     echo -e "  ${DIM}  MinIO:      https://your-minio-host${NC}"
     read_input "Endpoint URL (optional)" "$ce" ce
+    echo -e "  ${DIM}Temp directory for backup archives (must have enough disk space; /tmp is often RAM-backed).${NC}"
+    read_input "Temp directory" "$ct" ct
 
     # Region must not be empty — AWS CLI fails with "NoneType is not iterable" when region is blank
     cr="${cr:-eu-central-1}"
+    ct="${ct:-/var/tmp}"
 
     jq -n \
         --arg k "$ck" --arg s "$cs" --arg b "$cb" \
-        --arg r "$cr" --arg e "$ce" \
-        '{"aws_key":$k,"aws_secret":$s,"bucket":$b,"region":$r,"endpoint_url":$e}' \
+        --arg r "$cr" --arg e "$ce" --arg t "$ct" \
+        '{"aws_key":$k,"aws_secret":$s,"bucket":$b,"region":$r,"endpoint_url":$e,"tmpdir":$t}' \
         | vault_write backup.json
 
     mkdir -p /root/.aws
@@ -129,7 +150,7 @@ _bk_run() {
     local bucket; bucket=$(vault_read backup.json | jq -r '.bucket')
     local dbr; dbr=$(get_db_root_password)
     local ts; ts=$(date +%Y-%m-%d_%H%M%S)
-    local tmp="/tmp/cipi-bk-${ts}"; mkdir -p "$tmp"
+    local tmp="$(_bk_tmp_base)/cipi-bk-${ts}"; mkdir -p "$tmp"
     local backup_errors=""
 
     _do_backup() {

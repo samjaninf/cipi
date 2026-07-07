@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.14] — 2026-07-07
+
+### Fixed
+
+- **Backup fails on large apps when `/tmp` is tmpfs** — `cipi backup run` wrote gzipped DB dumps and file archives under `/tmp`, which on many servers is a small RAM-backed tmpfs. Staging now defaults to **`/var/tmp`** (disk). Override with **`tmpdir`** in `backup.json` (set via `cipi backup configure`) or **`CIPI_BACKUP_TMPDIR`**. Fixes [#500](https://github.com/cipi-sh/cipi/issues/500).
+
+---
+
 ## [4.7.13] — 2026-07-03
 
 ### Added
