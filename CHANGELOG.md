@@ -4,6 +4,19 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.18] — 2026-07-14
+
+### Fixed
+
+- **`cipi db list` failing on Ubuntu 25.10+ / 26.04** — **Migration 4.7.18** completes the fix left incomplete by **4.7.16** (chmod `|| true` only) and **4.7.17** (sudoers + open_basedir + warn-only lib check). Those migrations are unchanged; **4.7.18** is the step that makes **`cipi db list`** work on existing servers:
+  - **Read-only `/etc/cipi`** — **`lib/common.sh`** / **`lib/vault.sh`** (copied before the migration runs): **`_cipi_config_writable`** touch probe, skip **`apps-public.json`** / vault init when not writable, **`chmod 700`** only after probe succeeds.
+  - **sudo-rs sudoers** + **API `open_basedir`** — re-applied idempotently (same as 4.7.17).
+  - **`mount -o remount,rw /`** when `/etc/cipi` is read-only; refresh **`apps-public.json`**; **`sudo cipi db list`** smoke test.
+- **`cipi db list` silent MariaDB failures** — surfaces vault/MariaDB errors instead of a blank table.
+- **`chmod 700 /etc/cipi` only when writable** — init no longer runs `chmod` before the touch probe.
+
+---
+
 ## [4.7.17] — 2026-07-14
 
 ### Fixed

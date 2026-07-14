@@ -171,14 +171,6 @@ domain_is_used_by_other_app() {
 
 app_get() { vault_read apps.json | jq -r --arg a "$1" --arg k "$2" '.[$a][$k] // empty'; }
 
-# True when /etc/cipi accepts writes (false on remount-ro even if mode bits look writable).
-_cipi_config_writable() {
-    local probe="${CIPI_CONFIG}/.cipi-writable-$$"
-    touch "$probe" 2>/dev/null || return 1
-    rm -f "$probe" 2>/dev/null || true
-    return 0
-}
-
 # Generate apps-public.json: a plaintext projection of apps.json containing
 # only non-sensitive fields (domain, aliases, php, branch, repository, user,
 # created_at, suspended, basic_auth, custom, docroot). The encrypted apps.json
@@ -363,7 +355,9 @@ EOF
 
 # Init config on source
 mkdir -p "${CIPI_CONFIG}" "${CIPI_LOG}" 2>/dev/null || true
-chmod 700 "${CIPI_CONFIG}" 2>/dev/null || true
+if _cipi_config_writable 2>/dev/null; then
+    chmod 700 "${CIPI_CONFIG}" 2>/dev/null || true
+fi
 vault_init
 if _cipi_config_writable 2>/dev/null; then
     for f in apps.json databases.json; do

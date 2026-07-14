@@ -6,9 +6,17 @@
 [[ -z "${VAULT_KEY:-}" ]]    && readonly VAULT_KEY="${CIPI_CONFIG}/.vault_key"
 [[ -z "${VAULT_CIPHER:-}" ]] && readonly VAULT_CIPHER="aes-256-cbc"
 
+# True when /etc/cipi accepts writes (false on remount-ro even if mode bits look writable).
+_cipi_config_writable() {
+    local probe="${CIPI_CONFIG}/.cipi-writable-$$"
+    touch "$probe" 2>/dev/null || return 1
+    rm -f "$probe" 2>/dev/null || true
+    return 0
+}
+
 vault_init() {
     [[ -f "$VAULT_KEY" ]] && return 0
-    [[ -w "${CIPI_CONFIG}" ]] || return 0
+    _cipi_config_writable || return 0
     openssl rand -base64 32 > "$VAULT_KEY" 2>/dev/null || return 0
     chmod 400 "$VAULT_KEY" 2>/dev/null || true
 }

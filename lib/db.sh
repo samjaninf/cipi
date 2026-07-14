@@ -45,17 +45,25 @@ SQL
 }
 
 _db_list() {
-    local dbr; dbr=$(get_db_root_password)
-    echo -e "\n${BOLD}Databases${NC}"
-    printf "  ${BOLD}%-20s %-15s %s${NC}\n" "DATABASE" "USER" "SIZE"
-    mariadb -u root -p"$dbr" -N -e "
+    local dbr rows
+    dbr=$(get_db_root_password) || { error "Cannot read MariaDB credentials from vault"; exit 1; }
+    [[ -z "$dbr" || "$dbr" == "null" ]] && { error "MariaDB root password not configured (reset with: cipi reset db-password)"; exit 1; }
+    if ! rows=$(mariadb -u root -p"$dbr" -N -e "
         SELECT table_schema, ROUND(SUM(data_length+index_length)/1024/1024,2)
         FROM information_schema.tables
         WHERE table_schema NOT IN('information_schema','mysql','performance_schema','sys')
-        GROUP BY table_schema ORDER BY table_schema;" 2>/dev/null | while IFS=$'\t' read -r db sz; do
+        GROUP BY table_schema ORDER BY table_schema;" 2>&1); then
+        error "MariaDB query failed: ${rows}"
+        exit 1
+    fi
+    echo -e "\n${BOLD}Databases${NC}"
+    printf "  ${BOLD}%-20s %-15s %s${NC}\n" "DATABASE" "USER" "SIZE"
+    while IFS=$'\t' read -r db sz; do
+        [[ -z "$db" ]] && continue
         local u; u=$(vault_read databases.json | jq -r --arg n "$db" '.[$n].user//"—"' 2>/dev/null)
         printf "  %-20s %-15s %s MB\n" "$db" "$u" "$sz"
-    done; echo ""
+    done <<< "$rows"
+    echo ""
 }
 
 _db_delete() {
