@@ -56,6 +56,7 @@ selfupdate_command() {
     export CIPI_LIB CIPI_CONFIG CIPI_LOG
     [[ -z "${CIPI_API_ROOT:-}" ]] && export CIPI_API_ROOT="/opt/cipi/api"
     [[ -z "${CIPI_GUI_ROOT:-}" ]] && export CIPI_GUI_ROOT="/opt/cipi/gui"
+    export CIPI_UPDATE_TMP="$tmp"
 
     # The blanket `chown -R root:root /opt/cipi` above also re-roots the panel
     # Laravel app under /opt/cipi/api: storage/, database/ and bootstrap/cache/

@@ -14,6 +14,12 @@ _cipi_config_writable() {
     return 0
 }
 
+# Best-effort chmod: no-op when /etc/cipi is read-only (never abort the caller).
+_cipi_safe_chmod() {
+    _cipi_config_writable || return 0
+    chmod "$@" 2>/dev/null || true
+}
+
 vault_init() {
     [[ -f "$VAULT_KEY" ]] && return 0
     _cipi_config_writable || return 0
@@ -40,10 +46,11 @@ vault_read() {
 vault_write() {
     local file="${CIPI_CONFIG}/$1"
     local perms="${2:-600}"
+    _cipi_config_writable || { echo "vault: cannot write $1 (read-only ${CIPI_CONFIG})" >&2; return 1; }
     local tmp; tmp=$(mktemp)
     openssl enc -"${VAULT_CIPHER}" -salt -pbkdf2 -pass "file:${VAULT_KEY}" -out "$tmp"
     mv "$tmp" "$file"
-    chmod "$perms" "$file"
+    _cipi_safe_chmod "$perms" "$file"
 }
 
 # Encrypt an existing plaintext config file in-place.
@@ -56,5 +63,5 @@ vault_seal() {
     local tmp; tmp=$(mktemp)
     openssl enc -"${VAULT_CIPHER}" -salt -pbkdf2 -pass "file:${VAULT_KEY}" -in "$file" -out "$tmp"
     mv "$tmp" "$file"
-    chmod 600 "$file"
+    _cipi_safe_chmod 600 "$file"
 }

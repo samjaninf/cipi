@@ -49,18 +49,31 @@ _db_list() {
     dbr=$(get_db_root_password) || { error "Cannot read MariaDB credentials from vault"; exit 1; }
     [[ -z "$dbr" || "$dbr" == "null" ]] && { error "MariaDB root password not configured (reset with: cipi reset db-password)"; exit 1; }
     if ! rows=$(mariadb -u root -p"$dbr" -N -e "
-        SELECT table_schema, ROUND(SUM(data_length+index_length)/1024/1024,2)
-        FROM information_schema.tables
-        WHERE table_schema NOT IN('information_schema','mysql','performance_schema','sys')
-        GROUP BY table_schema ORDER BY table_schema;" 2>&1); then
+        SELECT s.schema_name,
+               COALESCE(ROUND(SUM(t.data_length + t.index_length) / 1024 / 1024, 2), 0)
+        FROM information_schema.schemata s
+        LEFT JOIN information_schema.tables t ON t.table_schema = s.schema_name
+        WHERE s.schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+        GROUP BY s.schema_name
+        ORDER BY s.schema_name;" 2>&1); then
         error "MariaDB query failed: ${rows}"
         exit 1
     fi
+    local db_meta
+    db_meta=$(vault_read databases.json 2>/dev/null)
+    local app_meta
+    app_meta=$(vault_read apps.json 2>/dev/null)
     echo -e "\n${BOLD}Databases${NC}"
     printf "  ${BOLD}%-20s %-15s %s${NC}\n" "DATABASE" "USER" "SIZE"
     while IFS=$'\t' read -r db sz; do
         [[ -z "$db" ]] && continue
-        local u; u=$(vault_read databases.json | jq -r --arg n "$db" '.[$n].user//"—"' 2>/dev/null)
+        local u
+        u=$(echo "$db_meta" | jq -r --arg n "$db" '.[$n].user // empty' 2>/dev/null)
+        if [[ -z "$u" ]]; then
+            u=$(echo "$app_meta" | jq -r --arg n "$db" 'if has($n) then $n else empty end' 2>/dev/null)
+        fi
+        [[ -z "$u" ]] && u="—"
+        [[ -z "$sz" || "$sz" == "NULL" ]] && sz="0"
         printf "  %-20s %-15s %s MB\n" "$db" "$u" "$sz"
     done <<< "$rows"
     echo ""

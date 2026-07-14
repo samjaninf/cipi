@@ -4,6 +4,15 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.19] — 2026-07-14
+
+### Fixed
+
+- **`cipi db list` missing databases** — **`lib/db.sh`** now uses **`information_schema.schemata`** so **empty** databases (fresh **`cipi db create`**, pre-migrate app DBs) show as **0 MB**. **Migration 4.7.19** verifies **`lib/db.sh`** on servers already on **4.7.18**.
+- **Read-only `/etc/cipi` polish** — **`lib/common.sh`** no longer runs init **`chmod 700 /etc/cipi`** on every source; **`lib/vault.sh`** adds **`_cipi_safe_chmod`** and guards **`vault_write`** when **`/etc/cipi`** is read-only.
+
+---
+
 ## [4.7.18] — 2026-07-14
 
 ### Fixed

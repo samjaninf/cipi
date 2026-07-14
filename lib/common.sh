@@ -183,7 +183,7 @@ _update_apps_public() {
     echo "$json" | jq '
         with_entries(.value |= {domain, aliases, php, branch, repository, user, created_at, suspended, basic_auth, custom, docroot})
     ' > "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || return 0
-    chmod 640 "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || true
+    _cipi_safe_chmod 640 "${CIPI_CONFIG}/apps-public.json"
     chgrp cipi-api "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || true
 }
 
@@ -200,7 +200,7 @@ ensure_apps_json_api_access() {
         usermod -aG cipi-api www-data 2>/dev/null || true
     fi
     chgrp cipi-api "${CIPI_CONFIG}" 2>/dev/null || true
-    chmod 750 "${CIPI_CONFIG}" 2>/dev/null || true
+    _cipi_safe_chmod 750 "${CIPI_CONFIG}"
     _update_apps_public
 }
 
@@ -353,11 +353,9 @@ stopwaitsecs=${timeout}
 EOF
 }
 
-# Init config on source
+# Init config on source — do not chmod /etc/cipi here: setup.sh sets permissions once.
+# chmod on every `cipi` source breaks read-only / (db list, deploy status, …).
 mkdir -p "${CIPI_CONFIG}" "${CIPI_LOG}" 2>/dev/null || true
-if _cipi_config_writable 2>/dev/null; then
-    chmod 700 "${CIPI_CONFIG}" 2>/dev/null || true
-fi
 vault_init
 if _cipi_config_writable 2>/dev/null; then
     for f in apps.json databases.json; do
