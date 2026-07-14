@@ -894,30 +894,9 @@ install_cipi() {
     echo "$BUILD" > /etc/cipi/version
 
     # Sudoers for API (www-data runs cipi via sudo — restricted to API commands only)
-    cat > /etc/sudoers.d/cipi-api <<'SUDOEOF'
-www-data ALL=(root) NOPASSWD: /usr/local/bin/cipi app create *, \
-                               /usr/local/bin/cipi app edit *, \
-                               /usr/local/bin/cipi app delete *, \
-                               /usr/local/bin/cipi app logs read *, \
-                               /usr/local/bin/cipi app suspend *, \
-                               /usr/local/bin/cipi app unsuspend *, \
-                               /usr/local/bin/cipi basicauth enable *, \
-                               /usr/local/bin/cipi basicauth disable *, \
-                               /usr/local/bin/cipi basicauth status *, \
-                               /usr/local/bin/cipi deploy *, \
-                               /usr/local/bin/cipi alias add *, \
-                               /usr/local/bin/cipi alias remove *, \
-                               /usr/local/bin/cipi ssl install *, \
-                               /usr/local/bin/cipi db list, \
-                               /usr/local/bin/cipi db create *, \
-                               /usr/local/bin/cipi db delete *, \
-                               /usr/local/bin/cipi db backup *, \
-                               /usr/local/bin/cipi db restore * *, \
-                               /usr/local/bin/cipi db password *, \
-                               /usr/local/bin/cipi-read-app-logs *, \
-                               /bin/cat /etc/cipi/apps.json
-SUDOEOF
-    chmod 440 /etc/sudoers.d/cipi-api
+    # shellcheck source=/dev/null
+    source "${CIPI_LIB}/cipi-api-sudoers.sh"
+    write_cipi_api_sudoers
 
     rm -rf /tmp/cipi-install
 

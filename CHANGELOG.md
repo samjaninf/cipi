@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.15] — 2026-07-14
+
+### Fixed
+
+- **Panel API broken on Ubuntu 25.10+ (`sudo-rs`)** — `/etc/sudoers.d/cipi-api` used `cipi db restore * *`, which **sudo-rs** rejects (`wildcards are not allowed in command arguments`). The invalid rule made **sudo** ignore the whole file, so **`www-data`** could not run any whitelisted API command (`I'm afraid I can't do that`). Replaced with **`cipi db restore *`** (trailing `*` only, per sudo-rs). Centralized the whitelist in **`lib/cipi-api-sudoers.sh`**. **Migration 4.7.15** rewrites sudoers on existing servers via **`cipi self-update`**.
+
+---
+
 ## [4.7.14] — 2026-07-07
 
 ### Fixed
