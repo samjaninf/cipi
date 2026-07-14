@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.16] — 2026-07-14
+
+### Fixed
+
+- **Panel API / `sudo cipi` failing with `chmod: Read-only file system (os error 30)`** — sourcing **`common.sh`** always ran **`chmod 700 /etc/cipi`** (and **`chmod`** on **`apps-public.json`**) without **`|| true`**. With **`set -e`**, any read-only **`/etc`** (kernel **`remount-ro`**, dual-boot NTFS left dirty, etc.) aborted even read-only commands like **`cipi db list`**, so the API returned only the chmod error. Init **`chmod`**/**`mkdir`** are now best-effort. **Migration 4.7.16** patches existing servers via **`cipi self-update`**.
+
+---
+
 ## [4.7.15] — 2026-07-14
 
 ### Fixed

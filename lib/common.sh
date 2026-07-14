@@ -180,7 +180,7 @@ _update_apps_public() {
     vault_read apps.json | jq '
         with_entries(.value |= {domain, aliases, php, branch, repository, user, created_at, suspended, basic_auth, custom, docroot})
     ' > "${CIPI_CONFIG}/apps-public.json"
-    chmod 640 "${CIPI_CONFIG}/apps-public.json"
+    chmod 640 "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || true
     chgrp cipi-api "${CIPI_CONFIG}/apps-public.json" 2>/dev/null || true
 }
 
@@ -350,8 +350,8 @@ EOF
 }
 
 # Init config on source
-mkdir -p "${CIPI_CONFIG}" "${CIPI_LOG}"
-chmod 700 "${CIPI_CONFIG}"
+mkdir -p "${CIPI_CONFIG}" "${CIPI_LOG}" 2>/dev/null || true
+chmod 700 "${CIPI_CONFIG}" 2>/dev/null || true
 vault_init
 for f in apps.json databases.json; do
     if [[ ! -f "${CIPI_CONFIG}/$f" ]]; then
