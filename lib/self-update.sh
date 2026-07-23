@@ -117,6 +117,16 @@ selfupdate_command() {
     echo "$nv" > "${CIPI_CONFIG}/version"
     rm -rf "$tmp"
     _selfupdate_prune_backups
+
+    # Re-source so helpers added in this update (e.g. purge_orphan_app_users) are
+    # available even when no new migration ran (same-version refresh / already on 4.7.19).
+    # shellcheck source=/dev/null
+    source "${CIPI_LIB}/common.sh"
+    if declare -f purge_orphan_app_users >/dev/null; then
+        step "Purging orphan app users..."
+        purge_orphan_app_users || true
+    fi
+
     log_action "SELF-UPDATE: v${CIPI_VERSION} → v${nv}"
     success "Updated to v${nv}"
 }

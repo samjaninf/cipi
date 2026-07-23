@@ -9,6 +9,7 @@ All notable changes to Cipi are documented in this file.
 ### Fixed
 
 - **`cipi deploy` password prompt / `Permission denied (publickey,password)`** — new apps created under umask `002` got `~/.ssh` as **`775`** (group-writable). OpenSSH **StrictModes** then refused pubkey auth with `Authentication refused: bad ownership or modes for directory /home/<app>/.ssh`, so Deployer's localhost SSH fell through to a password prompt. **`cipi app create`** now forces **`chmod 700 ~/.ssh`**; **Migration 4.7.19** repairs existing apps on **`cipi self-update`**.
+- **`cipi app delete` left orphan Linux users / homes / SSH keys** — `userdel -r … || true` often failed silently when cron or other processes still held the UID, so `/home/<app>` (and `~/.ssh` deploy keys) stayed on disk after the app was removed from `apps.json`. Delete now kills leftover processes, falls back to `rm -rf /home/<app>`, and runs **`purge_orphan_app_users`** to sweep other Cipi-looking leftovers not in `apps.json`. **Migration 4.7.19** / **`cipi self-update`** also purge orphans.
 
 ---
 

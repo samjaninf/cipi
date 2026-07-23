@@ -240,6 +240,79 @@ app_remove() {
     ensure_apps_json_api_access
 }
 
+# Remove Linux user, primary group, and home (including ~/.ssh deploy keys).
+# userdel -r often fails when processes still hold the UID (cron, leftover
+# php-fpm, open SSH); without a fallback the home/keys become orphans.
+remove_app_linux_user() {
+    local app="${1:-}"
+    [[ -z "$app" || "$app" == "cipi" ]] && return 0
+    validate_username "$app" || return 1
+
+    gpasswd -d www-data "$app" 2>/dev/null || true
+    crontab -u "$app" -r 2>/dev/null || true
+
+    if id "$app" &>/dev/null; then
+        pkill -KILL -u "$app" 2>/dev/null || true
+        local i=0
+        while (( i < 10 )) && pgrep -u "$app" &>/dev/null; do
+            sleep 0.2
+            ((i++)) || true
+        done
+        if ! userdel -r "$app" 2>/dev/null; then
+            userdel "$app" 2>/dev/null || true
+        fi
+    fi
+    groupdel "$app" 2>/dev/null || true
+    # Absolute cleanup — home + SSH keys must not linger after a partial userdel
+    [[ -e "/home/${app}" ]] && rm -rf "/home/${app}"
+    return 0
+}
+
+# Drop Linux users / homes that look like Cipi apps but are no longer in apps.json
+# (incomplete delete, failed create, or old userdel -r failure). Requires a Cipi
+# footprint so unrelated local accounts are never touched.
+purge_orphan_app_users() {
+    local registered="" u home footprint purged=0
+    [[ -f "${CIPI_CONFIG}/apps.json" ]] || return 0
+    registered=$(vault_read apps.json 2>/dev/null | jq -r 'keys[]' 2>/dev/null || true)
+
+    for home in /home/*/; do
+        [[ -d "$home" ]] || continue
+        u=$(basename "$home")
+        validate_username "$u" || continue
+        [[ "$u" == "cipi" ]] && continue
+        if printf '%s\n' "$registered" | grep -Fxq "$u"; then
+            continue
+        fi
+
+        footprint=false
+        if id "$u" &>/dev/null && id -nG "$u" 2>/dev/null | grep -qw cipi-apps; then
+            footprint=true
+        fi
+        [[ -d "${home}.deployer" ]] && footprint=true
+        [[ -f "${home}.ssh/id_ed25519" ]] && footprint=true
+        [[ -f "/etc/nginx/sites-available/${u}" ]] && footprint=true
+        [[ "$footprint" == "true" ]] || continue
+
+        info "Purging orphan app user '${u}'..."
+        rm -f "/etc/nginx/sites-enabled/${u}" "/etc/nginx/sites-available/${u}"
+        rm -f /etc/php/*/fpm/pool.d/"${u}.conf"
+        rm -f "/etc/supervisor/conf.d/${u}.conf"
+        rm -f "/etc/sudoers.d/cipi-${u}"
+        rm -f "/etc/nginx/cipi-basicauth/${u}.htpasswd"
+        supervisorctl stop "${u}-worker-"* 2>/dev/null || true
+        remove_app_linux_user "$u"
+        ((purged++)) || true
+    done
+
+    if (( purged > 0 )); then
+        nginx -t &>/dev/null && systemctl reload nginx 2>/dev/null || true
+        supervisorctl reread &>/dev/null || true
+        supervisorctl update &>/dev/null || true
+    fi
+    return 0
+}
+
 get_db_root_password() { vault_read server.json | jq -r '.db_root_password'; }
 
 confirm() {

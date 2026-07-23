@@ -693,10 +693,11 @@ app_delete() {
     step "Basic auth...";  rm -f "/etc/nginx/cipi-basicauth/${app}.htpasswd"
     step "SSL...";         certbot delete --cert-name "$d" --non-interactive 2>/dev/null||true
     step "User & files..."
-    gpasswd -d www-data "$app" 2>/dev/null||true
-    userdel -r "$app" 2>/dev/null||true
-    groupdel "$app" 2>/dev/null||true
+    # Kill leftover processes, userdel -r with rm -rf /home/<app> fallback (SSH keys included)
+    remove_app_linux_user "$app"
     step "Config...";      app_remove "$app"
+    # Sweep leftovers not in apps.json (failed prior deletes / partial userdel)
+    purge_orphan_app_users || true
 
     log_action "APP DELETED: $app"
 
