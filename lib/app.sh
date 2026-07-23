@@ -182,7 +182,10 @@ BASH
     success "Directories"
 
     # 3. SSH deploy key (for GitHub) + authorized_keys (for Deployer localhost SSH)
+    # ~/.ssh must be 700: umask 002 makes mkdir create 775, and sshd StrictModes
+    # then rejects pubkey auth ("bad ownership or modes") → password prompt on deploy.
     step "Deploy key..."
+    chmod 700 "${home}/.ssh"
     sudo -u "$app_user" ssh-keygen -t ed25519 -C "${app_user}@cipi" -f "${home}/.ssh/id_ed25519" -N "" -q
     local deploy_key; deploy_key=$(cat "${home}/.ssh/id_ed25519.pub")
     echo "$deploy_key" >> "${home}/.ssh/authorized_keys"
@@ -191,6 +194,7 @@ BASH
     ssh-keyscan -H localhost 127.0.0.1 github.com gitlab.com 2>/dev/null >> "${home}/.ssh/known_hosts"
     chown "${app_user}:${app_user}" "${home}/.ssh/known_hosts"
     chmod 600 "${home}/.ssh/known_hosts"
+    chmod 700 "${home}/.ssh"
     success "Deploy key"
 
     # 3b. Git provider integration (auto-add deploy key; webhook only for Laravel)

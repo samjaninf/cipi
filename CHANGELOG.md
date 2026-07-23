@@ -4,6 +4,14 @@ All notable changes to Cipi are documented in this file.
 
 ---
 
+## [4.7.19] — 2026-07-23
+
+### Fixed
+
+- **`cipi deploy` password prompt / `Permission denied (publickey,password)`** — new apps created under umask `002` got `~/.ssh` as **`775`** (group-writable). OpenSSH **StrictModes** then refused pubkey auth with `Authentication refused: bad ownership or modes for directory /home/<app>/.ssh`, so Deployer's localhost SSH fell through to a password prompt. **`cipi app create`** now forces **`chmod 700 ~/.ssh`**; **Migration 4.7.19** repairs existing apps on **`cipi self-update`**.
+
+---
+
 ## [4.7.18] — 2026-07-14
 
 ### Fixed
